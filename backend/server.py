@@ -1,75 +1,742 @@
-from fastapi import FastAPI, APIRouter
 from dotenv import load_dotenv
-from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
-import os
-import logging
 from pathlib import Path
-from pydantic import BaseModel, Field
-from typing import List
-import uuid
-from datetime import datetime
-
 
 ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
+load_dotenv(ROOT_DIR / ".env")
 
-# MongoDB connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+import os
+import logging
+import asyncio
+from datetime import datetime, timezone, timedelta
+from typing import List, Optional, Literal
 
-# Create the main app without a prefix
-app = FastAPI()
+import bcrypt
+import jwt
+import httpx
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Query
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from starlette.middleware.cors import CORSMiddleware
+from motor.motor_asyncio import AsyncIOMotorClient
+from pydantic import BaseModel, Field, EmailStr
+from bson import ObjectId
 
-# Create a router with the /api prefix
-api_router = APIRouter(prefix="/api")
+# ============================================================
+# CONFIG
+# ============================================================
+MONGO_URL = os.environ["MONGO_URL"]
+DB_NAME = os.environ["DB_NAME"]
+JWT_SECRET = os.environ["JWT_SECRET"]
+JWT_ALGORITHM = "HS256"
+ACCESS_TOKEN_MINUTES = 60 * 24
+REFRESH_TOKEN_DAYS = 30
+
+client = AsyncIOMotorClient(MONGO_URL)
+db = client[DB_NAME]
+
+app = FastAPI(title="Accadde Oggi API")
+api = APIRouter(prefix="/api")
+bearer_scheme = HTTPBearer(auto_error=False)
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger("accadde-oggi")
+
+# ============================================================
+# AUTH HELPERS
+# ============================================================
+def hash_password(pw: str) -> str:
+    return bcrypt.hashpw(pw.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
-# Define Models
-class StatusCheck(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    client_name: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+def verify_password(pw: str, hashed: str) -> bool:
+    try:
+        return bcrypt.checkpw(pw.encode("utf-8"), hashed.encode("utf-8"))
+    except Exception:
+        return False
 
-class StatusCheckCreate(BaseModel):
-    client_name: str
 
-# Add your routes to the router instead of directly to app
-@api_router.get("/")
+def create_access_token(user_id: str, email: str) -> str:
+    payload = {"sub": user_id, "email": email, "type": "access",
+               "exp": datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_MINUTES)}
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def create_refresh_token(user_id: str) -> str:
+    payload = {"sub": user_id, "type": "refresh",
+               "exp": datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_DAYS)}
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def user_public(user: dict) -> dict:
+    return {
+        "id": str(user["_id"]),
+        "email": user["email"],
+        "name": user.get("name", ""),
+        "role": user.get("role", "user"),
+        "language": user.get("language", "it"),
+        "country": user.get("country", "IT"),
+        "notifications_enabled": user.get("notifications_enabled", True),
+        "created_at": user.get("created_at").isoformat() if user.get("created_at") else None,
+    }
+
+
+async def get_current_user(
+    request: Request,
+    creds: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+) -> dict:
+    token = creds.credentials if (creds and creds.credentials) else request.cookies.get("access_token")
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        if payload.get("type") != "access":
+            raise HTTPException(status_code=401, detail="Invalid token type")
+        user = await db.users.find_one({"_id": ObjectId(payload["sub"])})
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+        return user_public(user)
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+
+# ============================================================
+# MODELS
+# ============================================================
+class RegisterBody(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=6)
+    name: Optional[str] = ""
+    language: Optional[Literal["it", "en", "es"]] = "it"
+    country: Optional[str] = "IT"
+
+
+class LoginBody(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class RefreshBody(BaseModel):
+    refresh_token: str
+
+
+class InteractionBody(BaseModel):
+    event_id: str
+    action: Literal["like", "dislike", "save", "unsave"]
+
+
+class UpdatePrefsBody(BaseModel):
+    language: Optional[Literal["it", "en", "es"]] = None
+    country: Optional[str] = None
+    notifications_enabled: Optional[bool] = None
+    name: Optional[str] = None
+
+
+# ============================================================
+# CATEGORIZATION + COUNTRY KEYWORDS
+# ============================================================
+CATEGORY_KEYWORDS = {
+    "wars": ["war", "battle", "invasion", "siege", "army", "military", "troops", "soldiers", "bomb",
+             "guerra", "battaglia", "invasione", "assedio", "esercito", "militare", "bomba",
+             "batalla", "ejército", "militar", "soldados"],
+    "science": ["scien", "discover", "invent", "physi", "chemi", "biolog", "astro", "space",
+                "nasa", "launch", "rocket", "satellite", "medicine", "vaccin", "research",
+                "scopert", "inventa", "medicin", "ricerca", "tecnolog",
+                "descubrimiento", "invento", "tecnologia", "investigación"],
+    "sports": ["sport", "football", "soccer", "olympic", "champion", "medal", "match", "tournament",
+               "calcio", "olimpi", "campion", "medaglia", "partita", "torneo",
+               "fútbol", "olímpic", "campeón"],
+    "politics": ["president", "elect", "parliament", "minister", "government", "treaty", "law",
+                 "constitution", "vote", "signed", "pope",
+                 "elezion", "parlamento", "ministro", "governo", "trattato", "papa",
+                 "presidente", "elecciones", "gobierno", "tratado"],
+    "culture": ["film", "movie", "music", "album", "concert", "artist", "painting", "novel",
+                "author", "writer", "premier", "opera", "theatre", "theater",
+                "musica", "concerto", "artista", "scrittore", "teatro", "premiere",
+                "película", "música", "escritor"],
+}
+
+COUNTRY_KEYWORDS = {
+    "IT": ["italia", "italian", "italy", "roma", "rome", "milan", "napoli", "naples", "florence", "firenze",
+           "venezia", "venice", "torino", "turin", "sicilia", "sicily", "genova", "bologna", "palermo",
+           "pope", "papa", "vatican", "vaticano"],
+    "ES": ["españa", "spain", "spanish", "madrid", "barcelona", "sevilla", "seville", "valencia",
+           "spagna", "spagnol", "catalán", "catalan"],
+    "US": ["united states", "america", "american", "washington", "new york", "california", "texas",
+           "nyc", "boston", "chicago", "florida", "estados unidos", "stati uniti", "statunitens"],
+    "GB": ["united kingdom", "britain", "british", "england", "english", "london", "scotland",
+           "wales", "regno unito", "inglese", "inglaterra", "reino unido"],
+    "FR": ["france", "french", "paris", "francia", "francese", "frances", "francia", "lyon", "marseille"],
+    "DE": ["germany", "german", "berlin", "munich", "hamburg", "germania", "tedesch", "alemania", "alemán"],
+    "MX": ["mexico", "mexican", "mexico city", "messico", "messican", "méxico", "mexicano"],
+    "AR": ["argentina", "argentinian", "buenos aires", "argentin"],
+    "BR": ["brazil", "brasil", "rio de janeiro", "são paulo", "brasile", "brasiliano", "brasileño"],
+    "PT": ["portugal", "portuguese", "lisbon", "portogallo", "portoghese", "portugués"],
+    "CH": ["switzerland", "swiss", "zurich", "geneva", "svizzera", "suiza", "suizo"],
+    "CA": ["canada", "canadian", "toronto", "montreal", "ottawa", "vancouver", "canadese", "canadiense"],
+    "AU": ["australia", "australian", "sydney", "melbourne"],
+    "JP": ["japan", "japanese", "tokyo", "giappone", "giappones", "japón", "japonés"],
+    "CN": ["china", "chinese", "beijing", "shanghai", "cina", "cinese", "chino"],
+    "RU": ["russia", "russian", "moscow", "soviet", "ussr", "russo"],
+    "IN": ["india", "indian", "delhi", "mumbai", "bombay"],
+    "CO": ["colombia", "colombian", "bogota", "bogotá", "medellin"],
+    "CL": ["chile", "chilean", "santiago", "cileno", "chileno"],
+    "PE": ["peru", "perù", "peruvian", "lima", "peruviano", "peruano"],
+}
+
+
+def categorize(text: str) -> str:
+    t = (text or "").lower()
+    scores = {cat: 0 for cat in CATEGORY_KEYWORDS}
+    for cat, words in CATEGORY_KEYWORDS.items():
+        for w in words:
+            if w in t:
+                scores[cat] += 1
+    best = max(scores, key=scores.get)
+    return best if scores[best] > 0 else "culture"
+
+
+def detect_country_relevance(text: str) -> List[str]:
+    """Return country codes that match keywords in the text."""
+    t = (text or "").lower()
+    hits = []
+    for code, words in COUNTRY_KEYWORDS.items():
+        for w in words:
+            if w in t:
+                hits.append(code)
+                break
+    return hits
+
+
+# ============================================================
+# WIKIPEDIA FETCH + MULTI-SOURCE MERGE
+# ============================================================
+WIKI_LANGS = ["it", "en", "es"]  # all editions we pull from
+
+
+async def fetch_wiki(lang: str, month: int, day: int) -> List[dict]:
+    url = f"https://api.wikimedia.org/feed/v1/wikipedia/{lang}/onthisday/events/{month:02d}/{day:02d}"
+    ua = "AccaddeOggi/1.0 (https://accaddeoggi.app; contact@accaddeoggi.app)"
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as hc:
+            r = await hc.get(url, headers={"User-Agent": ua, "Api-User-Agent": ua, "Accept": "application/json"})
+            if r.status_code != 200:
+                logger.warning(f"Wiki {lang} {r.status_code}")
+                return []
+            return r.json().get("events", [])
+    except Exception as e:
+        logger.error(f"Wiki fetch error ({lang}): {e}")
+        return []
+
+
+def _norm_page_title(raw: dict) -> str:
+    pages = raw.get("pages") or []
+    if not pages:
+        return ""
+    return (pages[0].get("wikibase_item") or pages[0].get("normalizedtitle") or pages[0].get("title") or "").lower()
+
+
+def _wikibase_id(raw: dict) -> Optional[str]:
+    """Wikibase item (like Q123) is the strongest cross-language event identifier."""
+    pages = raw.get("pages") or []
+    for p in pages:
+        if p.get("wikibase_item"):
+            return p.get("wikibase_item")
+    return None
+
+
+def _extract_image(raw: dict) -> Optional[str]:
+    for p in (raw.get("pages") or []):
+        if p.get("thumbnail", {}).get("source"):
+            return p["thumbnail"]["source"]
+        if p.get("originalimage", {}).get("source"):
+            return p["originalimage"]["source"]
+    return None
+
+
+def _wiki_url(raw: dict) -> Optional[str]:
+    pages = raw.get("pages") or []
+    if not pages:
+        return None
+    return (pages[0].get("content_urls", {}) or {}).get("desktop", {}).get("page")
+
+
+async def get_merged_events(month: int, day: int, primary_lang: str) -> List[dict]:
+    """
+    Fetch events from all Wikipedia editions we support (IT/EN/ES) in parallel.
+    Merge events by (year + wikibase_item) so that an event appearing in
+    multiple languages is tagged `global` (+1 per extra edition).
+    Return events tagged with: scope, sources, countries.
+    Text/title prefers the user's primary language, falling back to EN then ES.
+    """
+    cache_key = f"merged-{month:02d}-{day:02d}"
+    cached = await db.events_cache.find_one({"_id": cache_key})
+    today = datetime.now(timezone.utc).date()
+    if cached and cached.get("cached_at") and cached["cached_at"].date() == today:
+        return cached["events"]
+
+    results = await asyncio.gather(*[fetch_wiki(l, month, day) for l in WIKI_LANGS])
+    by_lang = dict(zip(WIKI_LANGS, results))
+
+    # Bucket: key = (year, wikibase_id or normalized title)
+    merged: dict = {}
+    for lang, events in by_lang.items():
+        for ev in events:
+            year = ev.get("year")
+            text = ev.get("text", "")
+            if not year or not text:
+                continue
+            wb = _wikibase_id(ev)
+            key = (int(year), wb) if wb else (int(year), _norm_page_title(ev) or text[:40].lower())
+            bucket = merged.get(key)
+            if not bucket:
+                merged[key] = {
+                    "year": int(year),
+                    "per_lang": {lang: ev},
+                    "image_url": _extract_image(ev),
+                    "wiki_urls": {lang: _wiki_url(ev)},
+                }
+            else:
+                bucket["per_lang"][lang] = ev
+                if not bucket["image_url"]:
+                    bucket["image_url"] = _extract_image(ev)
+                bucket["wiki_urls"][lang] = _wiki_url(ev)
+
+    current_year = datetime.now(timezone.utc).year
+    final: List[dict] = []
+
+    for key, b in merged.items():
+        per_lang = b["per_lang"]
+        sources = list(per_lang.keys())
+        # Scope: global if present in 2+ editions, otherwise local
+        scope = "global" if len(sources) >= 2 else "local"
+
+        # Pick best text for each user language: fallback chain
+        text_by_lang = {}
+        title_by_lang = {}
+        for ul in ("it", "en", "es"):
+            chosen = per_lang.get(ul) or per_lang.get("en") or per_lang.get("it") or per_lang.get("es")
+            if chosen:
+                pages = chosen.get("pages") or []
+                page_title = (pages[0].get("normalizedtitle") or pages[0].get("title")) if pages else None
+                text_by_lang[ul] = chosen.get("text", "")
+                title_by_lang[ul] = page_title or chosen.get("text", "").split(".")[0][:80]
+
+        # Country relevance detected from any language text
+        all_text = " ".join(text_by_lang.values()) + " " + " ".join([str(t) for t in title_by_lang.values()])
+        countries = detect_country_relevance(all_text)
+
+        # The origin: if scope is local and only one edition has it, origin is that edition's country
+        origin = None
+        if scope == "local":
+            lang_only = sources[0]
+            origin_map = {"it": "IT", "es": "ES", "en": None}  # EN is global-ish
+            origin = origin_map.get(lang_only)
+        if not origin and countries:
+            origin = countries[0]
+
+        category = categorize(all_text)
+        stable_id = f"evt-{key[0]}-{abs(hash(str(key))) % 10000000}"
+        years_ago = current_year - int(key[0])
+
+        final.append({
+            "id": stable_id,
+            "year": int(key[0]),
+            "years_ago": years_ago,
+            "text_by_lang": text_by_lang,
+            "title_by_lang": title_by_lang,
+            "image_url": b["image_url"],
+            "wiki_urls": b["wiki_urls"],
+            "category": category,
+            "scope": scope,          # 'global' | 'local'
+            "sources": sources,      # wiki editions
+            "countries": countries,  # countries mentioned in text
+            "origin": origin,        # primary country affiliation
+            "month": month,
+            "day": day,
+        })
+
+    # Cache
+    await db.events_cache.update_one(
+        {"_id": cache_key},
+        {"$set": {"events": final, "cached_at": datetime.now(timezone.utc)}},
+        upsert=True,
+    )
+    return final
+
+
+def project_event_for_lang(ev: dict, lang: str) -> dict:
+    """Return an event serialized for a specific language."""
+    text_by_lang = ev.get("text_by_lang", {})
+    title_by_lang = ev.get("title_by_lang", {})
+    text = text_by_lang.get(lang) or text_by_lang.get("en") or text_by_lang.get("it") or ""
+    title = title_by_lang.get(lang) or title_by_lang.get("en") or title_by_lang.get("it") or text[:60]
+    wiki_urls = ev.get("wiki_urls", {})
+    wiki_url = wiki_urls.get(lang) or wiki_urls.get("en") or wiki_urls.get("it")
+    return {
+        "id": ev["id"],
+        "year": ev["year"],
+        "years_ago": ev["years_ago"],
+        "title": title,
+        "text": text,
+        "image_url": ev.get("image_url"),
+        "category": ev["category"],
+        "scope": ev["scope"],
+        "sources": ev["sources"],
+        "countries": ev.get("countries", []),
+        "origin": ev.get("origin"),
+        "wiki_url": wiki_url,
+        "month": ev["month"],
+        "day": ev["day"],
+    }
+
+
+# ============================================================
+# AUTH ENDPOINTS
+# ============================================================
+@api.post("/auth/register")
+async def register(body: RegisterBody):
+    email = body.email.lower().strip()
+    existing = await db.users.find_one({"email": email})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    doc = {
+        "email": email,
+        "password_hash": hash_password(body.password),
+        "name": (body.name or email.split("@")[0]).strip(),
+        "role": "user",
+        "language": body.language or "it",
+        "country": (body.country or "IT").upper(),
+        "notifications_enabled": True,
+        "created_at": datetime.now(timezone.utc),
+    }
+    res = await db.users.insert_one(doc)
+    uid = str(res.inserted_id)
+    return {
+        "access_token": create_access_token(uid, email),
+        "refresh_token": create_refresh_token(uid),
+        "user": user_public({"_id": res.inserted_id, **doc}),
+    }
+
+
+@api.post("/auth/login")
+async def login(body: LoginBody):
+    email = body.email.lower().strip()
+    user = await db.users.find_one({"email": email})
+    if not user or not verify_password(body.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    uid = str(user["_id"])
+    return {
+        "access_token": create_access_token(uid, email),
+        "refresh_token": create_refresh_token(uid),
+        "user": user_public(user),
+    }
+
+
+@api.post("/auth/refresh")
+async def refresh_token(body: RefreshBody):
+    try:
+        payload = jwt.decode(body.refresh_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        if payload.get("type") != "refresh":
+            raise HTTPException(status_code=401, detail="Invalid token type")
+        user = await db.users.find_one({"_id": ObjectId(payload["sub"])})
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+        return {"access_token": create_access_token(str(user["_id"]), user["email"])}
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Refresh token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+
+@api.get("/auth/me")
+async def me(current=Depends(get_current_user)):
+    return current
+
+
+@api.post("/auth/logout")
+async def logout(current=Depends(get_current_user)):
+    return {"ok": True}
+
+
+@api.patch("/auth/me")
+async def update_me(body: UpdatePrefsBody, current=Depends(get_current_user)):
+    updates = {k: (v.upper() if k == "country" and isinstance(v, str) else v)
+               for k, v in body.dict().items() if v is not None}
+    if updates:
+        await db.users.update_one({"_id": ObjectId(current["id"])}, {"$set": updates})
+    user = await db.users.find_one({"_id": ObjectId(current["id"])})
+    return user_public(user)
+
+
+# ============================================================
+# EVENT ENDPOINTS
+# ============================================================
+async def load_user_interactions(user_id: str, event_ids: List[str]) -> dict:
+    interactions = await db.interactions.find(
+        {"user_id": user_id, "event_id": {"$in": event_ids}}
+    ).to_list(length=10000)
+    result: dict = {}
+    for it in interactions:
+        result.setdefault(it["event_id"], set()).add(it["type"])
+    return result
+
+
+@api.get("/events/today")
+async def events_today(
+    lang: Optional[Literal["it", "en", "es"]] = Query(None),
+    country: Optional[str] = Query(None),
+    category: Optional[str] = Query(None),
+    decade: Optional[int] = Query(None),
+    scope: Optional[Literal["global", "local", "all"]] = Query("all"),
+    limit: int = Query(40, ge=1, le=100),
+    current=Depends(get_current_user),
+):
+    user_lang = lang or current.get("language") or "it"
+    user_country = (country or current.get("country") or "IT").upper()
+
+    now = datetime.now(timezone.utc)
+    all_events = await get_merged_events(now.month, now.day, user_lang)
+
+    # Personalization signals
+    likes_agg = await db.interactions.aggregate([
+        {"$match": {"user_id": current["id"], "type": "like"}},
+        {"$group": {"_id": "$category", "count": {"$sum": 1}}},
+    ]).to_list(length=100)
+    liked_categories = {r["_id"]: r["count"] for r in likes_agg if r["_id"]}
+
+    disliked_list = await db.interactions.find(
+        {"user_id": current["id"], "type": "dislike"}
+    ).to_list(length=10000)
+    disliked_ids = {d["event_id"] for d in disliked_list}
+
+    # Filters
+    pool = all_events
+    if category:
+        pool = [e for e in pool if e["category"] == category]
+    if decade is not None:
+        pool = [e for e in pool if (e["year"] // 10) * 10 == decade]
+    if scope and scope != "all":
+        if scope == "global":
+            pool = [e for e in pool if e["scope"] == "global"]
+        else:
+            # local relevant to user's country
+            pool = [e for e in pool
+                    if e["scope"] == "local"
+                    and (user_country in e.get("countries", []) or e.get("origin") == user_country)]
+
+    # Filter out events that are strictly local to a DIFFERENT country than user's
+    # (i.e., Vasco Rossi only appears in IT wiki, so a Spanish user should NOT see it)
+    def country_ok(ev: dict) -> bool:
+        if ev["scope"] == "global":
+            return True
+        # For local events: show if user's country matches origin or is in countries
+        if user_country in ev.get("countries", []):
+            return True
+        if ev.get("origin") == user_country:
+            return True
+        # If origin is None and no countries detected, fall back to text availability in user_lang
+        if not ev.get("origin") and not ev.get("countries"):
+            return bool(ev.get("text_by_lang", {}).get(user_lang))
+        return False
+
+    pool = [e for e in pool if country_ok(e)]
+
+    # Scoring
+    def score(ev):
+        s = 0.0
+        if ev.get("image_url"):
+            s += 5
+        for m in (10, 20, 25, 50, 75, 100, 150, 200, 500, 1000):
+            if ev["years_ago"] == m:
+                s += 6
+                break
+        if ev["scope"] == "global":
+            s += 4  # Global events prioritized
+        if user_country in ev.get("countries", []) or ev.get("origin") == user_country:
+            s += 5  # Country relevance boost
+        if ev["category"] in liked_categories:
+            s += min(liked_categories[ev["category"]] * 1.5, 10)
+        # Small bonus for recency so current-era events appear high too
+        s += min((ev["years_ago"] < 100) * 0.5, 0.5)
+        return -s
+
+    pool = [e for e in pool if e["id"] not in disliked_ids]
+    pool.sort(key=score)
+    pool = pool[:limit]
+
+    # Project to language
+    projected = [project_event_for_lang(e, user_lang) for e in pool]
+
+    # Attach user interactions
+    inters = await load_user_interactions(current["id"], [e["id"] for e in projected])
+    for ev in projected:
+        marks = inters.get(ev["id"], set())
+        ev["liked"] = "like" in marks
+        ev["disliked"] = "dislike" in marks
+        ev["saved"] = "save" in marks
+
+    return {
+        "date": {"month": now.month, "day": now.day, "year": now.year},
+        "lang": user_lang,
+        "country": user_country,
+        "count": len(projected),
+        "events": projected,
+    }
+
+
+@api.get("/events/categories")
+async def categories(current=Depends(get_current_user)):
+    return {"categories": [
+        {"id": "wars", "color": "#E63946"},
+        {"id": "science", "color": "#4CC9F0"},
+        {"id": "culture", "color": "#FCA311"},
+        {"id": "sports", "color": "#FF5400"},
+        {"id": "politics", "color": "#0077B6"},
+    ]}
+
+
+@api.post("/events/interact")
+async def interact(body: InteractionBody, current=Depends(get_current_user)):
+    # Locate event in merged cache
+    now = datetime.now(timezone.utc)
+    cache = await db.events_cache.find_one({"_id": f"merged-{now.month:02d}-{now.day:02d}"})
+    ev_category = None
+    ev_year = None
+    if cache:
+        for e in cache.get("events", []):
+            if e["id"] == body.event_id:
+                ev_category = e.get("category")
+                ev_year = e.get("year")
+                break
+
+    if body.action == "unsave":
+        await db.interactions.delete_one({"user_id": current["id"], "event_id": body.event_id, "type": "save"})
+        return {"ok": True, "removed": "save"}
+
+    action_type = body.action
+    if action_type in ("like", "dislike"):
+        other = "dislike" if action_type == "like" else "like"
+        await db.interactions.delete_one({"user_id": current["id"], "event_id": body.event_id, "type": other})
+
+    existing = await db.interactions.find_one(
+        {"user_id": current["id"], "event_id": body.event_id, "type": action_type}
+    )
+    if existing:
+        await db.interactions.delete_one({"_id": existing["_id"]})
+        return {"ok": True, "removed": action_type}
+
+    await db.interactions.insert_one({
+        "user_id": current["id"],
+        "event_id": body.event_id,
+        "type": action_type,
+        "category": ev_category,
+        "year": ev_year,
+        "created_at": datetime.now(timezone.utc),
+    })
+    return {"ok": True, "added": action_type}
+
+
+@api.get("/events/favorites")
+async def favorites(
+    lang: Optional[Literal["it", "en", "es"]] = Query(None),
+    current=Depends(get_current_user),
+):
+    user_lang = lang or current.get("language") or "it"
+    saves = await db.interactions.find(
+        {"user_id": current["id"], "type": "save"}
+    ).sort("created_at", -1).to_list(length=500)
+    if not saves:
+        return {"count": 0, "events": []}
+
+    saved_ids = [s["event_id"] for s in saves]
+    caches = await db.events_cache.find({"_id": {"$regex": "^merged-"}}).to_list(length=500)
+    by_id = {}
+    for c in caches:
+        for e in c.get("events", []):
+            by_id[e["id"]] = e
+
+    events = []
+    for sid in saved_ids:
+        if sid in by_id:
+            ev = project_event_for_lang(by_id[sid], user_lang)
+            ev["saved"] = True
+            events.append(ev)
+    return {"count": len(events), "events": events}
+
+
+@api.get("/events/stats")
+async def stats(current=Depends(get_current_user)):
+    likes = await db.interactions.count_documents({"user_id": current["id"], "type": "like"})
+    dislikes = await db.interactions.count_documents({"user_id": current["id"], "type": "dislike"})
+    saves = await db.interactions.count_documents({"user_id": current["id"], "type": "save"})
+    pref_agg = await db.interactions.aggregate([
+        {"$match": {"user_id": current["id"], "type": "like"}},
+        {"$group": {"_id": "$category", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+    ]).to_list(length=10)
+    return {
+        "likes": likes,
+        "dislikes": dislikes,
+        "saves": saves,
+        "top_categories": [{"category": r["_id"] or "unknown", "count": r["count"]} for r in pref_agg],
+    }
+
+
+@api.get("/")
 async def root():
-    return {"message": "Hello World"}
+    return {"name": "Accadde Oggi API", "status": "ok"}
 
-@api_router.post("/status", response_model=StatusCheck)
-async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.dict()
-    status_obj = StatusCheck(**status_dict)
-    _ = await db.status_checks.insert_one(status_obj.dict())
-    return status_obj
 
-@api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    status_checks = await db.status_checks.find().to_list(1000)
-    return [StatusCheck(**status_check) for status_check in status_checks]
+# ============================================================
+# STARTUP
+# ============================================================
+@app.on_event("startup")
+async def startup():
+    await db.users.create_index("email", unique=True)
+    await db.interactions.create_index([("user_id", 1), ("event_id", 1), ("type", 1)], unique=True)
+    await db.interactions.create_index([("user_id", 1), ("type", 1)])
+    await db.events_cache.create_index("cached_at")
 
-# Include the router in the main app
-app.include_router(api_router)
+    # Ensure existing users get a country if missing
+    await db.users.update_many({"country": {"$exists": False}}, {"$set": {"country": "IT"}})
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    admin_email = os.environ.get("ADMIN_EMAIL", "").lower()
+    admin_pw = os.environ.get("ADMIN_PASSWORD", "")
+    if admin_email and admin_pw:
+        existing = await db.users.find_one({"email": admin_email})
+        if not existing:
+            await db.users.insert_one({
+                "email": admin_email, "password_hash": hash_password(admin_pw),
+                "name": "Admin", "role": "admin", "language": "it", "country": "IT",
+                "notifications_enabled": True, "created_at": datetime.now(timezone.utc),
+            })
+            logger.info(f"Seeded admin {admin_email}")
+        elif not verify_password(admin_pw, existing["password_hash"]):
+            await db.users.update_one({"email": admin_email},
+                                       {"$set": {"password_hash": hash_password(admin_pw)}})
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+    test_email = os.environ.get("TEST_USER_EMAIL", "").lower()
+    test_pw = os.environ.get("TEST_USER_PASSWORD", "")
+    if test_email and test_pw:
+        existing = await db.users.find_one({"email": test_email})
+        if not existing:
+            await db.users.insert_one({
+                "email": test_email, "password_hash": hash_password(test_pw),
+                "name": "Demo", "role": "user", "language": "it", "country": "IT",
+                "notifications_enabled": True, "created_at": datetime.now(timezone.utc),
+            })
+            logger.info(f"Seeded demo user {test_email}")
+        elif not verify_password(test_pw, existing["password_hash"]):
+            await db.users.update_one({"email": test_email},
+                                       {"$set": {"password_hash": hash_password(test_pw)}})
+
 
 @app.on_event("shutdown")
-async def shutdown_db_client():
+async def shutdown():
     client.close()
+
+
+app.include_router(api)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=False,
+                   allow_methods=["*"], allow_headers=["*"])
