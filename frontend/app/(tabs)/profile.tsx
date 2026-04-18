@@ -4,13 +4,16 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { LogOut, Heart, Bookmark, ThumbsDown, Globe, ChevronRight } from "lucide-react-native";
+import { LogOut, Heart, Bookmark, ThumbsDown, ChevronRight, Bell } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { useAuth } from "../../src/contexts/AuthContext";
 import api from "../../src/api/client";
 import { COLORS, categoryColor } from "../../src/theme";
 import { t, T, LANGS, Lang } from "../../src/i18n/translations";
 import { COUNTRIES, countryFlag } from "../../src/i18n/countries";
+import {
+  scheduleRandomDailyNotifications, cancelAllNotifications, getScheduledInfo, Window,
+} from "../../src/services/notifications";
 
 type Stats = {
   likes: number;
@@ -25,6 +28,8 @@ export default function Profile() {
   const lang = (user?.language as Lang) || "it";
   const [stats, setStats] = useState<Stats | null>(null);
   const [showCountry, setShowCountry] = useState(false);
+  const [notifWindow, setNotifWindow] = useState<Window>("random");
+  const [notifInfo, setNotifInfo] = useState<{ count: number; nextDate?: Date }>({ count: 0 });
 
   const loadStats = useCallback(async () => {
     try {
@@ -33,7 +38,12 @@ export default function Profile() {
     } catch {}
   }, []);
 
-  useEffect(() => { loadStats(); }, [loadStats]);
+  const loadNotifInfo = useCallback(async () => {
+    const info = await getScheduledInfo();
+    setNotifInfo(info);
+  }, []);
+
+  useEffect(() => { loadStats(); loadNotifInfo(); }, [loadStats, loadNotifInfo]);
 
   const doLogout = () => {
     Alert.alert(
@@ -63,7 +73,33 @@ export default function Profile() {
   };
 
   const toggleNotif = async () => {
-    await updateUser({ notifications_enabled: !user?.notifications_enabled });
+    const newState = !user?.notifications_enabled;
+    if (newState) {
+      const res = await scheduleRandomDailyNotifications(notifWindow, lang);
+      if (!res.ok) {
+        Alert.alert(
+          lang === "it" ? "Permessi necessari" : lang === "es" ? "Permisos requeridos" : "Permissions required",
+          lang === "it"
+            ? "Attiva le notifiche per Accadde Oggi dalle impostazioni del dispositivo."
+            : lang === "es"
+            ? "Activa las notificaciones para Un Día Como Hoy en ajustes."
+            : "Enable notifications in device settings."
+        );
+        return;
+      }
+    } else {
+      await cancelAllNotifications();
+    }
+    await updateUser({ notifications_enabled: newState });
+    await loadNotifInfo();
+  };
+
+  const changeWindow = async (w: Window) => {
+    setNotifWindow(w);
+    if (user?.notifications_enabled) {
+      await scheduleRandomDailyNotifications(w, lang);
+      await loadNotifInfo();
+    }
   };
 
   return (
@@ -179,7 +215,15 @@ export default function Profile() {
           <View style={styles.settingRow}>
             <View style={{ flex: 1 }}>
               <Text style={styles.settingTitle}>{t(lang, "notifications").toUpperCase()}</Text>
-              <Text style={styles.settingHint}>Avvisi quotidiani</Text>
+              <Text style={styles.settingHint}>
+                {user?.notifications_enabled
+                  ? (lang === "it"
+                      ? `${notifInfo.count} programmate · orari casuali`
+                      : lang === "es"
+                      ? `${notifInfo.count} programadas · horas aleatorias`
+                      : `${notifInfo.count} scheduled · random times`)
+                  : (lang === "it" ? "Disattivate" : lang === "es" ? "Desactivadas" : "Disabled")}
+              </Text>
             </View>
             <Switch
               testID="notifications-toggle"
@@ -189,6 +233,43 @@ export default function Profile() {
               thumbColor="#fff"
             />
           </View>
+
+          {user?.notifications_enabled && (
+            <View style={styles.hourPickerBox}>
+              <Text style={styles.hourLabel}>
+                {lang === "it" ? "FINESTRA ORARIA (ORARI CASUALI OGNI GIORNO)"
+                  : lang === "es" ? "FRANJA HORARIA (HORAS ALEATORIAS CADA DÍA)"
+                  : "TIME WINDOW (RANDOM TIME EACH DAY)"}
+              </Text>
+              <View style={styles.windowGrid}>
+                {([
+                  { id: "morning" as Window, label_it: "Mattina 7–10", label_en: "Morning 7–10", label_es: "Mañana 7–10", icon: "☀️" },
+                  { id: "afternoon" as Window, label_it: "Pomeriggio 12–16", label_en: "Afternoon 12–16", label_es: "Tarde 12–16", icon: "🌤️" },
+                  { id: "evening" as Window, label_it: "Sera 18–22", label_en: "Evening 18–22", label_es: "Noche 18–22", icon: "🌙" },
+                  { id: "random" as Window, label_it: "Sorpresa 8–22", label_en: "Surprise 8–22", label_es: "Sorpresa 8–22", icon: "🎲" },
+                ]).map((w) => (
+                  <TouchableOpacity
+                    key={w.id}
+                    testID={`notif-window-${w.id}`}
+                    style={[styles.windowChip, notifWindow === w.id && styles.windowChipActive]}
+                    onPress={() => changeWindow(w.id)}
+                  >
+                    <Text style={styles.windowIcon}>{w.icon}</Text>
+                    <Text style={[styles.windowText, notifWindow === w.id && { color: "#050505" }]}>
+                      {lang === "it" ? w.label_it : lang === "es" ? w.label_es : w.label_en}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {notifInfo.nextDate && (
+                <Text style={styles.nextHint}>
+                  <Bell size={10} color={COLORS.textMuted} />{" "}
+                  {lang === "it" ? "Prossima" : lang === "es" ? "Próxima" : "Next"}:{" "}
+                  {notifInfo.nextDate.toLocaleString()}
+                </Text>
+              )}
+            </View>
+          )}
         </View>
 
         <View style={styles.section}>
@@ -277,6 +358,26 @@ const styles = StyleSheet.create({
   countryOptActive: { backgroundColor: COLORS.like, borderColor: COLORS.like },
   countryOptText: { color: COLORS.textSecondary, fontSize: 12, fontWeight: "700" },
   aboutText: { color: COLORS.textSecondary, fontSize: 13, lineHeight: 20 },
+  hourPickerBox: { marginTop: 10, marginBottom: 6 },
+  hourLabel: { color: COLORS.textMuted, fontSize: 10, letterSpacing: 2, fontWeight: "800", marginBottom: 10 },
+  hourChip: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    paddingHorizontal: 14, paddingVertical: 10,
+    borderRadius: 999, borderWidth: 1, borderColor: COLORS.border,
+  },
+  hourChipActive: { backgroundColor: COLORS.textPrimary, borderColor: COLORS.textPrimary },
+  hourText: { color: COLORS.textSecondary, fontSize: 12, fontWeight: "800", letterSpacing: 1 },
+  windowGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  windowChip: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    paddingHorizontal: 14, paddingVertical: 12,
+    borderRadius: 12, borderWidth: 1, borderColor: COLORS.border,
+    flexGrow: 1, minWidth: "45%",
+  },
+  windowChipActive: { backgroundColor: COLORS.like, borderColor: COLORS.like },
+  windowIcon: { fontSize: 16 },
+  windowText: { color: COLORS.textSecondary, fontSize: 12, fontWeight: "700" },
+  nextHint: { color: COLORS.textMuted, fontSize: 11, marginTop: 10, letterSpacing: 0.5 },
   logoutBtn: {
     flexDirection: "row",
     alignItems: "center", justifyContent: "center",
