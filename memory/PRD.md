@@ -43,6 +43,7 @@
 ## Backend API (all under `/api`)
 - `POST /auth/register|login|refresh|logout`, `GET|PATCH /auth/me`
 - `GET /events/today?lang=&country=&category=&decade=&scope=&limit=`
+- `GET /events/teasers?lang=&country=&month=&day=&count=` — curated short teasers (title_short ≤60c, text_short ≤95c with "…") for push notification hooks
 - `GET /events/favorites`, `GET /events/stats`, `GET /events/categories`
 - `POST /events/interact` with `{event_id, action: like|dislike|save|unsave}` (idempotent toggles)
 
@@ -55,3 +56,13 @@
 
 ## Business enhancement baked in
 - Country + likes = compound personalization signal that improves engagement daily and creates data about user interests (huge for future monetization via targeted educational content or sponsored historical reenactments)
+
+
+## Push notifications with real event hooks (v1.1)
+- Uses `expo-notifications` with local scheduling, 14 days × 3-4 random slots per day
+- Fetches real event teasers from backend `/api/events/teasers`
+- Each notification rotates 50/50 between:
+  1. **Real excerpt format** — Title: "📜 YEAR · X anni fa"; Body: truncated real event text ending with "…"
+  2. **Curiosity hook format** — Title: "Sai cosa accadde nel YEAR?"; Body: intriguing question per category
+- Users can preview the next scheduled notification (title+body+time) in the Profile screen
+- "PROVA NOTIFICA ORA" button fires a sample teaser notification immediately
