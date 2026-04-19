@@ -111,11 +111,7 @@ export default function Feed() {
   return (
     <View style={styles.container} testID="feed-screen">
       {/* Floating top header */}
-      <View style={[styles.header, { paddingTop: insets.top + 8 }]} pointerEvents="box-none">
-        <LinearGradient
-          colors={["rgba(5,5,5,0.9)", "rgba(5,5,5,0)"]}
-          style={StyleSheet.absoluteFillObject}
-        />
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <View style={styles.headerRow}>
           <View>
             <Text style={styles.dateLabel}>{now.toUpperCase()}</Text>
@@ -184,7 +180,10 @@ const styles = StyleSheet.create({
     top: 0, left: 0, right: 0,
     zIndex: 10,
     paddingHorizontal: 20,
-    paddingBottom: 16,
+    paddingBottom: 14,
+    backgroundColor: "rgba(5,5,5,0.92)",
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
   },
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   dateLabel: { color: COLORS.like, fontSize: 11, fontWeight: "800", letterSpacing: 3 },

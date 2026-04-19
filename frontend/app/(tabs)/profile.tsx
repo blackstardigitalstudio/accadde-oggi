@@ -11,6 +11,7 @@ import api from "../../src/api/client";
 import { COLORS, categoryColor } from "../../src/theme";
 import { t, T, LANGS, Lang } from "../../src/i18n/translations";
 import { COUNTRIES, countryFlag } from "../../src/i18n/countries";
+import { INTERESTS, subLabel } from "../../src/i18n/interests";
 import {
   scheduleRandomDailyNotifications, cancelAllNotifications, getScheduledInfo, Window,
 } from "../../src/services/notifications";
@@ -101,6 +102,15 @@ export default function Profile() {
       await loadNotifInfo();
     }
   };
+
+  const toggleInterest = async (key: string) => {
+    const current = new Set(user?.interests || []);
+    if (current.has(key)) current.delete(key);
+    else current.add(key);
+    await updateUser({ interests: Array.from(current) });
+  };
+
+  const interestsSet = new Set(user?.interests || []);
 
   return (
     <SafeAreaView style={styles.c} testID="profile-screen" edges={["top"]}>
@@ -273,7 +283,63 @@ export default function Profile() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>{t(lang, "about").toUpperCase()}</Text>
+          <Text style={styles.sectionLabel}>
+            {lang === "it" ? "INTERESSI · COSA VUOI VEDERE" : lang === "es" ? "INTERESES · QUÉ QUIERES VER" : "INTERESTS · WHAT YOU WANT TO SEE"}
+          </Text>
+          <Text style={styles.interestsHint}>
+            {lang === "it"
+              ? "Seleziona i tuoi argomenti preferiti. Le notizie corrispondenti saranno sempre in cima al feed."
+              : lang === "es"
+              ? "Selecciona tus temas favoritos. Las noticias relacionadas aparecerán primero en tu feed."
+              : "Pick your favorite topics. Matching events will always appear first in your feed."}
+          </Text>
+
+          {Object.keys(INTERESTS).map((cat) => {
+            const accent = categoryColor(cat);
+            const catSelected = interestsSet.has(cat);
+            return (
+              <View key={cat} style={styles.interestCat}>
+                <TouchableOpacity
+                  testID={`interest-cat-${cat}`}
+                  style={[styles.interestCatHead, { borderLeftColor: accent }, catSelected && { backgroundColor: "rgba(230,57,70,0.08)" }]}
+                  onPress={() => toggleInterest(cat)}
+                >
+                  <View style={[styles.catDotLarge, { backgroundColor: accent }]} />
+                  <Text style={[styles.interestCatText, { color: accent }]}>
+                    {t(lang, cat as any).toUpperCase()}
+                  </Text>
+                  <View style={[styles.interestCheck, catSelected && { backgroundColor: accent, borderColor: accent }]}>
+                    {catSelected && <Text style={styles.checkMark}>✓</Text>}
+                  </View>
+                </TouchableOpacity>
+                <View style={styles.interestSubs}>
+                  {INTERESTS[cat].map((sub) => {
+                    const key = `${cat}.${sub.id}`;
+                    const selected = interestsSet.has(key);
+                    return (
+                      <TouchableOpacity
+                        key={key}
+                        testID={`interest-sub-${key}`}
+                        style={[styles.interestChip, selected && { backgroundColor: accent, borderColor: accent }]}
+                        onPress={() => toggleInterest(key)}
+                      >
+                        <Text style={styles.interestIcon}>{sub.icon}</Text>
+                        <Text style={[styles.interestChipText, selected && { color: "#050505", fontWeight: "800" }]}>
+                          {subLabel(sub, lang)}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            );
+          })}
+          <Text style={styles.interestsCount}>
+            {interestsSet.size} {lang === "it" ? "selezionati" : lang === "es" ? "seleccionados" : "selected"}
+          </Text>
+        </View>
+
+        <View style={styles.section}>
           <Text style={styles.aboutText}>{t(lang, "aboutText")}</Text>
         </View>
 
@@ -378,6 +444,36 @@ const styles = StyleSheet.create({
   windowIcon: { fontSize: 16 },
   windowText: { color: COLORS.textSecondary, fontSize: 12, fontWeight: "700" },
   nextHint: { color: COLORS.textMuted, fontSize: 11, marginTop: 10, letterSpacing: 0.5 },
+  interestsHint: { color: COLORS.textMuted, fontSize: 12, lineHeight: 18, marginBottom: 14 },
+  interestCat: { marginBottom: 14 },
+  interestCatHead: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    paddingVertical: 10, paddingHorizontal: 12,
+    borderLeftWidth: 3, borderRadius: 6,
+    backgroundColor: "rgba(255,255,255,0.04)",
+  },
+  catDotLarge: { width: 10, height: 10, borderRadius: 5 },
+  interestCatText: { fontSize: 13, fontWeight: "900", letterSpacing: 2, flex: 1 },
+  interestCheck: {
+    width: 22, height: 22, borderRadius: 11,
+    borderWidth: 1.5, borderColor: COLORS.border,
+    alignItems: "center", justifyContent: "center",
+  },
+  checkMark: { color: "#050505", fontSize: 12, fontWeight: "900" },
+  interestSubs: {
+    flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8, paddingLeft: 4,
+  },
+  interestChip: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    paddingHorizontal: 12, paddingVertical: 8,
+    borderRadius: 999, borderWidth: 1, borderColor: COLORS.border,
+  },
+  interestIcon: { fontSize: 14 },
+  interestChipText: { color: COLORS.textSecondary, fontSize: 12, fontWeight: "600" },
+  interestsCount: {
+    color: COLORS.textMuted, fontSize: 11, letterSpacing: 1.5, fontWeight: "700",
+    textAlign: "right", marginTop: 6,
+  },
   logoutBtn: {
     flexDirection: "row",
     alignItems: "center", justifyContent: "center",

@@ -10,6 +10,7 @@ export type User = {
   role: string;
   language: Lang;
   country: string;
+  interests: string[];
   notifications_enabled: boolean;
   created_at?: string;
 };

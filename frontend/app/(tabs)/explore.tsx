@@ -6,6 +6,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Globe, MapPin } from "lucide-react-native";
+import { useLocalSearchParams } from "expo-router";
 import { useAuth } from "../../src/contexts/AuthContext";
 import api from "../../src/api/client";
 import { COLORS, categoryColor } from "../../src/theme";
@@ -19,11 +20,16 @@ const DECADES = [1900, 1920, 1940, 1950, 1960, 1970, 1980, 1990, 2000, 2010, 202
 export default function Explore() {
   const { user } = useAuth();
   const { width } = useWindowDimensions();
+  const params = useLocalSearchParams<{ category?: string; scope?: string }>();
   const lang = (user?.language as any) || "it";
 
-  const [activeCat, setActiveCat] = useState<string | null>(null);
+  const [activeCat, setActiveCat] = useState<string | null>(
+    (typeof params.category === "string" && CATS.includes(params.category)) ? params.category : null
+  );
   const [activeDecade, setActiveDecade] = useState<number | null>(null);
-  const [activeScope, setActiveScope] = useState<"all" | "global" | "local">("all");
+  const [activeScope, setActiveScope] = useState<"all" | "global" | "local">(
+    (params.scope === "global" || params.scope === "local") ? params.scope : "all"
+  );
   const [events, setEvents] = useState<EventData[]>([]);
   const [loading, setLoading] = useState(true);
 

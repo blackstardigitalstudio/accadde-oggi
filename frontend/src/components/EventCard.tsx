@@ -4,7 +4,8 @@ import {
   useWindowDimensions, Share, Platform,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { BlurView } from "expo-blur";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
 import { Heart, ThumbsDown, Bookmark, Share2, Globe, MapPin } from "lucide-react-native";
 import { COLORS, categoryColor } from "../theme";
 import { t, Lang } from "../i18n/translations";
@@ -48,6 +49,10 @@ type Props = {
 const EventCard: React.FC<Props> = ({ event, lang, height, onLike, onDislike, onSave }) => {
   const accent = categoryColor(event.category);
   const img = event.image_url || FALLBACK_IMAGES[event.category] || FALLBACK_IMAGES.culture;
+  const insets = useSafeAreaInsets();
+  const router = useRouter();
+  // Header takes roughly insets.top + 72 (date + brand + bottom padding). Keep badges well clear.
+  const topOffset = insets.top + 96;
 
   const onShare = async () => {
     try {
@@ -70,14 +75,24 @@ const EventCard: React.FC<Props> = ({ event, lang, height, onLike, onDislike, on
         />
       </ImageBackground>
 
-      {/* Top badges */}
-      <View style={styles.topRow}>
-        <View style={[styles.catPill, { borderLeftColor: accent }]}>
+      {/* Top badges - pressable */}
+      <View style={[styles.topRow, { top: topOffset }]}>
+        <TouchableOpacity
+          testID={`card-cat-${event.id}`}
+          style={[styles.catPill, { borderLeftColor: accent }]}
+          onPress={() => router.push({ pathname: "/explore", params: { category: event.category } })}
+          activeOpacity={0.7}
+        >
           <Text style={[styles.catText, { color: accent }]}>
             {t(lang, event.category as any).toUpperCase()}
           </Text>
-        </View>
-        <View style={styles.scopePill}>
+        </TouchableOpacity>
+        <TouchableOpacity
+          testID={`card-scope-${event.id}`}
+          style={styles.scopePill}
+          onPress={() => router.push({ pathname: "/explore", params: { scope: event.scope } })}
+          activeOpacity={0.7}
+        >
           {event.scope === "global" ? (
             <Globe color="#F8F8F6" size={12} strokeWidth={2.5} />
           ) : (
@@ -93,7 +108,7 @@ const EventCard: React.FC<Props> = ({ event, lang, height, onLike, onDislike, on
               {countryFlag(event.origin || event.countries?.[0] || "")}
             </Text>
           )}
-        </View>
+        </TouchableOpacity>
       </View>
 
       {/* Bottom content */}
@@ -169,12 +184,12 @@ const styles = StyleSheet.create({
   card: { width: "100%", backgroundColor: "#050505" },
   topRow: {
     position: "absolute",
-    top: Platform.OS === "ios" ? 60 : 36,
     left: 24,
     right: 24,
     flexDirection: "row",
     gap: 10,
     flexWrap: "wrap",
+    zIndex: 5,
   },
   catPill: {
     backgroundColor: "rgba(0,0,0,0.55)",

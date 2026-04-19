@@ -74,6 +74,7 @@ def user_public(user: dict) -> dict:
         "role": user.get("role", "user"),
         "language": user.get("language", "it"),
         "country": user.get("country", "IT"),
+        "interests": user.get("interests", []),
         "notifications_enabled": user.get("notifications_enabled", True),
         "created_at": user.get("created_at").isoformat() if user.get("created_at") else None,
     }
@@ -130,6 +131,7 @@ class UpdatePrefsBody(BaseModel):
     country: Optional[str] = None
     notifications_enabled: Optional[bool] = None
     name: Optional[str] = None
+    interests: Optional[List[str]] = None  # e.g. ["science.space", "culture.cinema"]
 
 
 # ============================================================
@@ -154,6 +156,79 @@ CATEGORY_KEYWORDS = {
                 "author", "writer", "premier", "opera", "theatre", "theater",
                 "musica", "concerto", "artista", "scrittore", "teatro", "premiere",
                 "película", "música", "escritor"],
+}
+
+# Subcategory keyword detection. Event gets one subcategory per category if matched.
+SUBCATEGORY_KEYWORDS = {
+    "wars": {
+        "world_wars": ["world war", "ww1", "ww2", "wwii", "wwi", "prima guerra mondiale",
+                       "seconda guerra mondiale", "primera guerra mundial", "segunda guerra mundial"],
+        "ancient_battles": ["roman", "medieval", "crusade", "byzantine", "persian", "greek",
+                            "romano", "medievale", "crociat", "bizantin",
+                            "romano", "medieval", "cruzada"],
+        "cold_war": ["cold war", "soviet", "ussr", "nato", "guerra fredda", "sovietic",
+                     "guerra fría", "soviético"],
+        "revolutions": ["revolution", "uprising", "rivoluzion", "rivolta", "revolución", "rebelión"],
+        "civil_wars": ["civil war", "guerra civile", "guerra civil"],
+    },
+    "science": {
+        "space": ["space", "moon", "mars", "nasa", "rocket", "satellite", "spacecraft", "astronaut",
+                  "apollo", "soyuz", "iss",
+                  "spazio", "luna", "marte", "astronaut", "razzo",
+                  "espacio", "luna", "cohete", "astronauta"],
+        "medicine": ["medicine", "vaccin", "surgery", "doctor", "disease", "antibiotic",
+                     "medicin", "chirurg", "vaccin", "malatt",
+                     "medicina", "vacuna", "cirugía", "enfermedad"],
+        "physics": ["physi", "atom", "quantum", "einstein", "relativity", "nuclear",
+                    "fisic", "quantistic", "relativit", "nuclear",
+                    "física", "cuántic", "relatividad"],
+        "biology": ["dna", "biolog", "genetic", "evolution", "species",
+                    "genetic", "evoluzion", "specie",
+                    "genétic", "evolución", "especie"],
+        "technology": ["computer", "internet", "software", "microchip", "apple", "microsoft",
+                       "google", "ibm", "tesla", "ai", "algorithm",
+                       "computadora", "algoritmo"],
+    },
+    "culture": {
+        "cinema": ["film", "movie", "director", "cinema", "oscar", "hollywood", "premier",
+                   "regista", "pellicola",
+                   "película", "director", "cine"],
+        "music": ["music", "album", "concert", "singer", "band", "symphony", "opera",
+                  "musica", "cantante", "concerto", "sinfonia",
+                  "música", "cantante", "concierto", "sinfonía"],
+        "literature": ["book", "novel", "poem", "author", "writer", "publish",
+                       "libro", "romanzo", "poesia", "scrittore", "poeta", "pubblica",
+                       "libro", "novela", "poema", "escritor", "publicó"],
+        "art": ["paint", "sculpture", "artist", "exhibition", "gallery", "museum",
+                "pittur", "scultura", "artista", "mostra", "gallerie", "museo",
+                "pintura", "escultura", "artista", "exposición", "galería", "museo"],
+        "fashion": ["fashion", "design", "couture", "moda", "stilista", "diseñador"],
+    },
+    "sports": {
+        "football": ["football", "soccer", "fifa", "world cup", "premier league",
+                     "calcio", "coppa del mondo", "mondiali",
+                     "fútbol", "copa mundial"],
+        "olympics": ["olympic", "olympics", "olimpi", "olímpic"],
+        "motorsport": ["formula", "f1", "ferrari", "mclaren", "racing", "grand prix",
+                       "automobilismo", "gran premio"],
+        "tennis": ["tennis", "wimbledon", "roland garros", "grand slam"],
+        "cycling": ["cycling", "tour de france", "giro d'italia", "vuelta",
+                    "ciclismo", "ciclista"],
+        "boxing": ["boxing", "heavyweight", "knockout", "pugilato", "boxeo"],
+    },
+    "politics": {
+        "elections": ["elect", "ballot", "campaign", "vote", "elezion", "campagna elettorale",
+                      "elecciones", "campaña"],
+        "treaties": ["treaty", "pact", "agreement", "accord", "trattato", "patto", "accordo",
+                     "tratado", "pacto", "acuerdo"],
+        "monarchies": ["king", "queen", "emperor", "empress", "royal", "monarch", "prince",
+                       "re ", "regina", "imperatore", "monarchia", "principe",
+                       "rey", "reina", "emperador", "monarquía", "príncipe"],
+        "papacy": ["pope", "vatican", "papa", "vaticano", "conclav", "papado"],
+        "assassinations": ["assassin", "murder", "killed", "shot", "died",
+                           "assassin", "ucciso", "morte",
+                           "asesinat", "muerto", "asesinad"],
+    },
 }
 
 COUNTRY_KEYWORDS = {
@@ -194,6 +269,19 @@ def categorize(text: str) -> str:
                 scores[cat] += 1
     best = max(scores, key=scores.get)
     return best if scores[best] > 0 else "culture"
+
+
+def detect_subcategory(text: str, category: str) -> Optional[str]:
+    t = (text or "").lower()
+    subcats = SUBCATEGORY_KEYWORDS.get(category, {})
+    best_sub = None
+    best_score = 0
+    for sub, words in subcats.items():
+        score = sum(1 for w in words if w in t)
+        if score > best_score:
+            best_score = score
+            best_sub = sub
+    return best_sub
 
 
 def detect_country_relevance(text: str) -> List[str]:
@@ -246,12 +334,22 @@ def _wikibase_id(raw: dict) -> Optional[str]:
 
 
 def _extract_image(raw: dict) -> Optional[str]:
+    """Extract best image URL and upgrade thumbnail size for full-screen display."""
+    url = None
     for p in (raw.get("pages") or []):
         if p.get("thumbnail", {}).get("source"):
-            return p["thumbnail"]["source"]
+            url = p["thumbnail"]["source"]
+            break
         if p.get("originalimage", {}).get("source"):
-            return p["originalimage"]["source"]
-    return None
+            url = p["originalimage"]["source"]
+            break
+    if not url:
+        return None
+    # Wikipedia thumbnails use /thumb/..../NNNpx-filename. Upgrade to 1080px for HD cards.
+    # Example: /thumb/7/7e/Pope.jpg/330px-Pope.jpg -> /thumb/7/7e/Pope.jpg/1080px-Pope.jpg
+    import re
+    url = re.sub(r"/\d{2,4}px-", "/1080px-", url)
+    return url
 
 
 def _wiki_url(raw: dict) -> Optional[str]:
@@ -381,6 +479,7 @@ def project_event_for_lang(ev: dict, lang: str) -> dict:
         "text": text,
         "image_url": ev.get("image_url"),
         "category": ev["category"],
+        "subcategory": ev.get("subcategory"),
         "scope": ev["scope"],
         "sources": ev["sources"],
         "countries": ev.get("countries", []),
@@ -494,6 +593,7 @@ async def events_today(
 ):
     user_lang = lang or current.get("language") or "it"
     user_country = (country or current.get("country") or "IT").upper()
+    user_interests = set(current.get("interests", []) or [])
 
     now = datetime.now(timezone.utc)
     all_events = await get_merged_events(now.month, now.day, user_lang)
@@ -552,12 +652,18 @@ async def events_today(
                 s += 6
                 break
         if ev["scope"] == "global":
-            s += 4  # Global events prioritized
+            s += 4
         if user_country in ev.get("countries", []) or ev.get("origin") == user_country:
-            s += 5  # Country relevance boost
+            s += 5
         if ev["category"] in liked_categories:
             s += min(liked_categories[ev["category"]] * 1.5, 10)
-        # Small bonus for recency so current-era events appear high too
+        # User-declared interests: strong boost
+        cat_key = ev["category"]
+        sub_key = ev.get("subcategory")
+        if cat_key in user_interests:
+            s += 6
+        if sub_key and f"{cat_key}.{sub_key}" in user_interests:
+            s += 10
         s += min((ev["years_ago"] < 100) * 0.5, 0.5)
         return -s
 
