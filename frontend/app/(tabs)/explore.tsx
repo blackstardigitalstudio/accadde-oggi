@@ -53,15 +53,17 @@ export default function Explore() {
   const tileW = (width - 48 - 12) / 2;
 
   return (
-    <SafeAreaView style={styles.c} testID="explore-screen" edges={["top"]}>
-      <LinearGradient colors={["#0a0a0a", "#050505"]} style={StyleSheet.absoluteFillObject} />
+    <SafeAreaView style={[styles.c, { backgroundColor: colors.bg }]} testID="explore-screen" edges={["top"]}>
+      {mode === "dark" && (
+        <LinearGradient colors={["#0a0a0a", "#050505"]} style={StyleSheet.absoluteFillObject} />
+      )}
       <ScrollView contentContainerStyle={{ paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <Text style={styles.title}>{t(lang, "explore").toUpperCase()}</Text>
+          <Text style={[styles.title, { color: colors.textPrimary }]}>{t(lang, "explore").toUpperCase()}</Text>
           <View style={styles.titleUnderline} />
         </View>
 
-        <Text style={styles.sectionLabel}>SCOPE</Text>
+        <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>SCOPE</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll} contentContainerStyle={{ paddingHorizontal: 24, gap: 8 }}>
           <TouchableOpacity
             testID="scope-all"

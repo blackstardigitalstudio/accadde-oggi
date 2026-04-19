@@ -4,9 +4,10 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { LogOut, Heart, Bookmark, ThumbsDown, ChevronRight, Bell } from "lucide-react-native";
+import { LogOut, Heart, Bookmark, ThumbsDown, ChevronRight, Bell, Sun, Moon } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { useAuth } from "../../src/contexts/AuthContext";
+import { useTheme } from "../../src/contexts/ThemeContext";
 import api from "../../src/api/client";
 import { COLORS, categoryColor } from "../../src/theme";
 import { t, T, LANGS, Lang } from "../../src/i18n/translations";
@@ -25,6 +26,7 @@ type Stats = {
 
 export default function Profile() {
   const { user, logout, updateUser } = useAuth();
+  const { colors, mode, toggle: toggleTheme } = useTheme();
   const router = useRouter();
   const lang = (user?.language as Lang) || "it";
   const [stats, setStats] = useState<Stats | null>(null);
@@ -113,8 +115,10 @@ export default function Profile() {
   const interestsSet = new Set(user?.interests || []);
 
   return (
-    <SafeAreaView style={styles.c} testID="profile-screen" edges={["top"]}>
-      <LinearGradient colors={["#0a0a0a", "#050505"]} style={StyleSheet.absoluteFillObject} />
+    <SafeAreaView style={[styles.c, { backgroundColor: colors.bg }]} testID="profile-screen" edges={["top"]}>
+      {mode === "dark" && (
+        <LinearGradient colors={["#0a0a0a", "#050505"]} style={StyleSheet.absoluteFillObject} />
+      )}
       <ScrollView contentContainerStyle={{ paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <View style={styles.avatar}>
@@ -122,13 +126,41 @@ export default function Profile() {
               {(user?.name || user?.email || "U").slice(0, 1).toUpperCase()}
             </Text>
           </View>
-          <Text style={styles.name} testID="profile-name">{user?.name || "—"}</Text>
-          <Text style={styles.email}>{user?.email}</Text>
+          <Text style={[styles.name, { color: colors.textPrimary }]} testID="profile-name">{user?.name || "—"}</Text>
+          <Text style={[styles.email, { color: colors.textSecondary }]}>{user?.email}</Text>
           {user?.created_at && (
-            <Text style={styles.since}>
+            <Text style={[styles.since, { color: colors.textMuted }]}>
               {t(lang, "memberSince")} {new Date(user.created_at).toLocaleDateString()}
             </Text>
           )}
+        </View>
+
+        {/* Theme toggle — prominent */}
+        <View style={styles.themeToggleWrap}>
+          <TouchableOpacity
+            testID="theme-toggle"
+            onPress={toggleTheme}
+            style={[styles.themeToggle, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            activeOpacity={0.8}
+          >
+            {mode === "dark" ? (
+              <Moon size={18} color={colors.textPrimary} strokeWidth={2.2} />
+            ) : (
+              <Sun size={18} color={colors.textPrimary} strokeWidth={2.2} />
+            )}
+            <Text style={[styles.themeToggleText, { color: colors.textPrimary }]}>
+              {lang === "it"
+                ? mode === "dark" ? "TEMA SCURO" : "TEMA CHIARO"
+                : lang === "es"
+                ? mode === "dark" ? "TEMA OSCURO" : "TEMA CLARO"
+                : mode === "dark" ? "DARK THEME" : "LIGHT THEME"}
+            </Text>
+            <View style={[styles.themeSwitchPill, { backgroundColor: mode === "dark" ? COLORS.like : "#FCA311" }]}>
+              <Text style={styles.themeSwitchPillText}>
+                {mode === "dark" ? "→ ☀️" : "→ 🌙"}
+              </Text>
+            </View>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.statsRow}>
@@ -365,6 +397,19 @@ const styles = StyleSheet.create({
   name: { color: COLORS.textPrimary, fontSize: 24, fontWeight: "900", marginTop: 14, letterSpacing: -0.5 },
   email: { color: COLORS.textSecondary, fontSize: 13, marginTop: 4 },
   since: { color: COLORS.textMuted, fontSize: 11, marginTop: 6, letterSpacing: 1 },
+  themeToggleWrap: { paddingHorizontal: 24, marginBottom: 14 },
+  themeToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  themeToggleText: { flex: 1, fontSize: 12, fontWeight: "800", letterSpacing: 2 },
+  themeSwitchPill: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
+  themeSwitchPillText: { color: "#fff", fontSize: 12, fontWeight: "900" },
   statsRow: {
     flexDirection: "row",
     paddingHorizontal: 24,

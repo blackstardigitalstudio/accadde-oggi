@@ -8,6 +8,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { BookmarkX } from "lucide-react-native";
 import { useAuth } from "../../src/contexts/AuthContext";
+import { useTheme } from "../../src/contexts/ThemeContext";
 import api from "../../src/api/client";
 import { COLORS, categoryColor } from "../../src/theme";
 import { t } from "../../src/i18n/translations";
@@ -15,6 +16,7 @@ import { EventData } from "../../src/components/EventCard";
 
 export default function Favorites() {
   const { user } = useAuth();
+  const { colors, mode } = useTheme();
   const { width } = useWindowDimensions();
   const lang = (user?.language as any) || "it";
 
@@ -44,12 +46,14 @@ export default function Favorites() {
   };
 
   return (
-    <SafeAreaView style={styles.c} testID="favorites-screen" edges={["top"]}>
-      <LinearGradient colors={["#0a0a0a", "#050505"]} style={StyleSheet.absoluteFillObject} />
+    <SafeAreaView style={[styles.c, { backgroundColor: colors.bg }]} testID="favorites-screen" edges={["top"]}>
+      {mode === "dark" && (
+        <LinearGradient colors={["#0a0a0a", "#050505"]} style={StyleSheet.absoluteFillObject} />
+      )}
       <View style={styles.header}>
-        <Text style={styles.title}>{t(lang, "favorites").toUpperCase()}</Text>
+        <Text style={[styles.title, { color: colors.textPrimary }]}>{t(lang, "favorites").toUpperCase()}</Text>
         <View style={styles.titleUnderline} />
-        <Text style={styles.sub}>{events.length} {t(lang, "events")}</Text>
+        <Text style={[styles.sub, { color: colors.textMuted }]}>{events.length} {t(lang, "events")}</Text>
       </View>
 
       {loading ? (
@@ -74,7 +78,7 @@ export default function Favorites() {
             const accent = categoryColor(item.category);
             return (
               <TouchableOpacity
-                style={styles.row}
+                style={[styles.row, { backgroundColor: colors.surface }]}
                 testID={`fav-item-${item.id}`}
                 onPress={() => remove(item.id)}
                 activeOpacity={0.8}
@@ -99,8 +103,8 @@ export default function Favorites() {
                 </ImageBackground>
                 <View style={styles.rowBody}>
                   <Text style={styles.rowYear}>{item.year}</Text>
-                  <Text style={styles.rowTitle} numberOfLines={2}>{item.title}</Text>
-                  <Text style={styles.rowYearsAgo}>
+                  <Text style={[styles.rowTitle, { color: colors.textPrimary }]} numberOfLines={2}>{item.title}</Text>
+                  <Text style={[styles.rowYearsAgo, { color: colors.textMuted }]}>
                     {item.years_ago} {item.years_ago === 1 ? t(lang, "yearAgo") : t(lang, "yearsAgo")}
                   </Text>
                 </View>
