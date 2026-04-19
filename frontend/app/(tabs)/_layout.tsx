@@ -1,16 +1,19 @@
 import { Tabs } from "expo-router";
-import { Platform, View, Text, StyleSheet } from "react-native";
+import { Platform } from "react-native";
 import { Home, Compass, Heart, User } from "lucide-react-native";
-import { BlurView } from "expo-blur";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { COLORS } from "../../src/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import { t } from "../../src/i18n/translations";
 
 export default function TabsLayout() {
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const lang = (user?.language as "it" | "en" | "es") || "it";
 
-  const tabStyle = (active: boolean) => ({ color: active ? COLORS.like : COLORS.textSecondary });
+  // Add extra bottom padding to clear the Android system nav bar / iOS home indicator
+  const bottomInset = insets.bottom || (Platform.OS === "android" ? 12 : 0);
+  const tabHeight = 58 + bottomInset;
 
   return (
     <Tabs
@@ -20,8 +23,8 @@ export default function TabsLayout() {
           backgroundColor: "#0a0a0a",
           borderTopColor: COLORS.border,
           borderTopWidth: 1,
-          height: Platform.OS === "ios" ? 86 : 64,
-          paddingBottom: Platform.OS === "ios" ? 26 : 8,
+          height: tabHeight,
+          paddingBottom: bottomInset + 4,
           paddingTop: 8,
         },
         tabBarActiveTintColor: COLORS.like,

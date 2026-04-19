@@ -16,7 +16,8 @@ export default function Feed() {
   const { user } = useAuth();
   const { height, width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const tabBarHeight = 64 + (insets.bottom || 0);
+  const bottomInset = insets.bottom || 12;
+  const tabBarHeight = 58 + bottomInset;
   const cardHeight = height - tabBarHeight;
 
   const [events, setEvents] = useState<EventData[]>([]);
