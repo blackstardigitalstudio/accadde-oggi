@@ -14,7 +14,7 @@ import { t, T, LANGS, Lang } from "../../src/i18n/translations";
 import { COUNTRIES, countryFlag } from "../../src/i18n/countries";
 import { INTERESTS, subLabel } from "../../src/i18n/interests";
 import {
-  scheduleRandomDailyNotifications, cancelAllNotifications, getScheduledInfo, Window,
+  scheduleRandomDailyNotifications, cancelAllNotifications, getScheduledInfo, sendPreviewNotification, Window,
 } from "../../src/services/notifications";
 
 type Stats = {
@@ -32,7 +32,8 @@ export default function Profile() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [showCountry, setShowCountry] = useState(false);
   const [notifWindow, setNotifWindow] = useState<Window>("random");
-  const [notifInfo, setNotifInfo] = useState<{ count: number; nextDate?: Date }>({ count: 0 });
+  const [notifInfo, setNotifInfo] = useState<{ count: number; nextDate?: Date; nextTitle?: string; nextBody?: string }>({ count: 0 });
+  const [previewSending, setPreviewSending] = useState(false);
 
   const loadStats = useCallback(async () => {
     try {
@@ -78,7 +79,7 @@ export default function Profile() {
   const toggleNotif = async () => {
     const newState = !user?.notifications_enabled;
     if (newState) {
-      const res = await scheduleRandomDailyNotifications(notifWindow, lang, 30, 3);
+      const res = await scheduleRandomDailyNotifications(notifWindow, lang, 14, 3);
       if (!res.ok) {
         Alert.alert(
           lang === "it" ? "Permessi necessari" : lang === "es" ? "Permisos requeridos" : "Permissions required",
@@ -100,8 +101,27 @@ export default function Profile() {
   const changeWindow = async (w: Window) => {
     setNotifWindow(w);
     if (user?.notifications_enabled) {
-      await scheduleRandomDailyNotifications(w, lang, 30, 3);
+      await scheduleRandomDailyNotifications(w, lang, 14, 3);
       await loadNotifInfo();
+    }
+  };
+
+  const doPreviewNotif = async () => {
+    setPreviewSending(true);
+    const ok = await sendPreviewNotification(lang);
+    setPreviewSending(false);
+    if (!ok) {
+      Alert.alert(
+        lang === "it" ? "Permessi necessari" : lang === "es" ? "Permisos requeridos" : "Permissions required",
+        lang === "it"
+          ? "Attiva le notifiche per vedere l'anteprima."
+          : lang === "es"
+          ? "Activa las notificaciones para ver la vista previa."
+          : "Enable notifications to see the preview."
+      );
+    } else {
+      // Also refresh info
+      setTimeout(loadNotifInfo, 500);
     }
   };
 
@@ -164,20 +184,20 @@ export default function Profile() {
         </View>
 
         <View style={styles.statsRow}>
-          <View style={styles.statBox} testID="stat-likes">
-            <Heart color={COLORS.like} size={22} fill={COLORS.like} strokeWidth={0} />
-            <Text style={styles.statNum}>{stats?.likes ?? 0}</Text>
-            <Text style={styles.statLabel}>{t(lang, "totalLikes").toUpperCase()}</Text>
+          <View style={[styles.statBox, { backgroundColor: colors.surface, borderColor: colors.border }]} testID="stat-likes">
+            <Heart color={colors.like} size={22} fill={colors.like} strokeWidth={0} />
+            <Text style={[styles.statNum, { color: colors.textPrimary }]}>{stats?.likes ?? 0}</Text>
+            <Text style={[styles.statLabel, { color: colors.textMuted }]}>{t(lang, "totalLikes").toUpperCase()}</Text>
           </View>
-          <View style={styles.statBox} testID="stat-saves">
-            <Bookmark color={COLORS.textPrimary} size={22} fill={COLORS.textPrimary} strokeWidth={0} />
-            <Text style={styles.statNum}>{stats?.saves ?? 0}</Text>
-            <Text style={styles.statLabel}>{t(lang, "totalSaves").toUpperCase()}</Text>
+          <View style={[styles.statBox, { backgroundColor: colors.surface, borderColor: colors.border }]} testID="stat-saves">
+            <Bookmark color={colors.textPrimary} size={22} fill={colors.textPrimary} strokeWidth={0} />
+            <Text style={[styles.statNum, { color: colors.textPrimary }]}>{stats?.saves ?? 0}</Text>
+            <Text style={[styles.statLabel, { color: colors.textMuted }]}>{t(lang, "totalSaves").toUpperCase()}</Text>
           </View>
-          <View style={styles.statBox} testID="stat-dislikes">
-            <ThumbsDown color={COLORS.textMuted} size={22} strokeWidth={2} />
-            <Text style={styles.statNum}>{stats?.dislikes ?? 0}</Text>
-            <Text style={styles.statLabel}>DISLIKE</Text>
+          <View style={[styles.statBox, { backgroundColor: colors.surface, borderColor: colors.border }]} testID="stat-dislikes">
+            <ThumbsDown color={colors.textMuted} size={22} strokeWidth={2} />
+            <Text style={[styles.statNum, { color: colors.textPrimary }]}>{stats?.dislikes ?? 0}</Text>
+            <Text style={[styles.statLabel, { color: colors.textMuted }]}>DISLIKE</Text>
           </View>
         </View>
 
@@ -199,20 +219,20 @@ export default function Profile() {
         )}
 
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>{t(lang, "settings").toUpperCase()}</Text>
+          <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>{t(lang, "settings").toUpperCase()}</Text>
 
           <View style={styles.settingGroup}>
-            <Text style={styles.settingTitle}>{t(lang, "language").toUpperCase()}</Text>
+            <Text style={[styles.settingTitle, { color: colors.textPrimary }]}>{t(lang, "language").toUpperCase()}</Text>
             <View style={styles.langRow}>
               {LANGS.map((l) => (
                 <TouchableOpacity
                   key={l.code}
                   testID={`set-lang-${l.code}`}
                   onPress={() => setLang(l.code)}
-                  style={[styles.langChip, lang === l.code && styles.langChipActive]}
+                  style={[styles.langChip, { borderColor: colors.border }, lang === l.code && { backgroundColor: colors.textPrimary, borderColor: colors.textPrimary }]}
                 >
                   <Text style={styles.langFlag}>{l.flag}</Text>
-                  <Text style={[styles.langText, lang === l.code && styles.langTextActive]}>
+                  <Text style={[styles.langText, { color: colors.textSecondary }, lang === l.code && { color: colors.bg }]}>
                     {l.code.toUpperCase()}
                   </Text>
                 </TouchableOpacity>
@@ -222,19 +242,19 @@ export default function Profile() {
 
           <TouchableOpacity
             testID="country-toggle"
-            style={styles.settingRow}
+            style={[styles.settingRow, { borderTopColor: colors.border }]}
             onPress={() => setShowCountry((s) => !s)}
           >
             <View style={{ flex: 1 }}>
-              <Text style={styles.settingTitle}>PAESE</Text>
-              <Text style={styles.settingValue}>
+              <Text style={[styles.settingTitle, { color: colors.textPrimary }]}>PAESE</Text>
+              <Text style={[styles.settingValue, { color: colors.textSecondary }]}>
                 {countryFlag(user?.country || "IT")}{"  "}
                 {COUNTRIES.find((x) => x.code === user?.country)?.[
                   lang === "it" ? "label_it" : lang === "es" ? "label_es" : "label_en"
                 ] || user?.country}
               </Text>
             </View>
-            <ChevronRight color={COLORS.textMuted} size={20} style={{ transform: [{ rotate: showCountry ? "90deg" : "0deg" }] }} />
+            <ChevronRight color={colors.textMuted} size={20} style={{ transform: [{ rotate: showCountry ? "90deg" : "0deg" }] }} />
           </TouchableOpacity>
           {showCountry && (
             <View style={styles.countryGrid}>
@@ -242,11 +262,11 @@ export default function Profile() {
                 <TouchableOpacity
                   key={cn.code}
                   testID={`set-country-${cn.code}`}
-                  style={[styles.countryOpt, user?.country === cn.code && styles.countryOptActive]}
+                  style={[styles.countryOpt, { borderColor: colors.border }, user?.country === cn.code && { backgroundColor: colors.like, borderColor: colors.like }]}
                   onPress={() => setCountry(cn.code)}
                 >
                   <Text style={styles.langFlag}>{cn.flag}</Text>
-                  <Text style={[styles.countryOptText, user?.country === cn.code && { color: "#050505" }]}>
+                  <Text style={[styles.countryOptText, { color: colors.textSecondary }, user?.country === cn.code && { color: "#fff" }]}>
                     {lang === "it" ? cn.label_it : lang === "es" ? cn.label_es : cn.label_en}
                   </Text>
                 </TouchableOpacity>
@@ -254,10 +274,10 @@ export default function Profile() {
             </View>
           )}
 
-          <View style={styles.settingRow}>
+          <View style={[styles.settingRow, { borderTopColor: colors.border }]}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.settingTitle}>{t(lang, "notifications").toUpperCase()}</Text>
-              <Text style={styles.settingHint}>
+              <Text style={[styles.settingTitle, { color: colors.textPrimary }]}>{t(lang, "notifications").toUpperCase()}</Text>
+              <Text style={[styles.settingHint, { color: colors.textMuted }]}>
                 {user?.notifications_enabled
                   ? (lang === "it"
                       ? `3-4 al giorno · orari casuali · ${notifInfo.count} programmate`
@@ -304,21 +324,53 @@ export default function Profile() {
                 ))}
               </View>
               {notifInfo.nextDate && (
-                <Text style={styles.nextHint}>
-                  <Bell size={10} color={COLORS.textMuted} />{" "}
-                  {lang === "it" ? "Prossima" : lang === "es" ? "Próxima" : "Next"}:{" "}
-                  {notifInfo.nextDate.toLocaleString()}
-                </Text>
+                <View style={[styles.notifPreview, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                  <Text style={[styles.notifPreviewLabel, { color: colors.textMuted }]}>
+                    {lang === "it" ? "ANTEPRIMA PROSSIMA NOTIFICA" : lang === "es" ? "VISTA PREVIA PRÓXIMA NOTIFICACIÓN" : "NEXT NOTIFICATION PREVIEW"}
+                  </Text>
+                  {notifInfo.nextTitle && (
+                    <Text style={[styles.notifPreviewTitle, { color: colors.textPrimary }]} numberOfLines={2}>
+                      {notifInfo.nextTitle}
+                    </Text>
+                  )}
+                  {notifInfo.nextBody && (
+                    <Text style={[styles.notifPreviewBody, { color: colors.textSecondary }]} numberOfLines={3}>
+                      {notifInfo.nextBody}
+                    </Text>
+                  )}
+                  <View style={styles.notifPreviewFooter}>
+                    <Bell size={11} color={colors.textMuted} />
+                    <Text style={[styles.nextHint, { color: colors.textMuted, marginTop: 0, marginLeft: 4 }]}>
+                      {lang === "it" ? "Prossima" : lang === "es" ? "Próxima" : "Next"}:{" "}
+                      {notifInfo.nextDate.toLocaleString()}
+                    </Text>
+                  </View>
+                </View>
               )}
+
+              <TouchableOpacity
+                testID="notif-preview-btn"
+                onPress={doPreviewNotif}
+                disabled={previewSending}
+                style={[styles.previewBtn, { backgroundColor: colors.like, opacity: previewSending ? 0.6 : 1 }]}
+                activeOpacity={0.85}
+              >
+                <Bell size={14} color="#fff" strokeWidth={2.5} />
+                <Text style={styles.previewBtnText}>
+                  {previewSending
+                    ? (lang === "it" ? "INVIO..." : lang === "es" ? "ENVIANDO..." : "SENDING...")
+                    : (lang === "it" ? "PROVA NOTIFICA ORA" : lang === "es" ? "PROBAR NOTIFICACIÓN" : "TRY A NOTIFICATION")}
+                </Text>
+              </TouchableOpacity>
             </View>
           )}
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>
+          <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
             {lang === "it" ? "INTERESSI · COSA VUOI VEDERE" : lang === "es" ? "INTERESES · QUÉ QUIERES VER" : "INTERESTS · WHAT YOU WANT TO SEE"}
           </Text>
-          <Text style={styles.interestsHint}>
+          <Text style={[styles.interestsHint, { color: colors.textMuted }]}>
             {lang === "it"
               ? "Seleziona i tuoi argomenti preferiti. Le notizie corrispondenti saranno sempre in cima al feed."
               : lang === "es"
@@ -352,11 +404,11 @@ export default function Profile() {
                       <TouchableOpacity
                         key={key}
                         testID={`interest-sub-${key}`}
-                        style={[styles.interestChip, selected && { backgroundColor: accent, borderColor: accent }]}
+                        style={[styles.interestChip, { borderColor: colors.border }, selected && { backgroundColor: accent, borderColor: accent }]}
                         onPress={() => toggleInterest(key)}
                       >
                         <Text style={styles.interestIcon}>{sub.icon}</Text>
-                        <Text style={[styles.interestChipText, selected && { color: "#050505", fontWeight: "800" }]}>
+                        <Text style={[styles.interestChipText, { color: colors.textSecondary }, selected && { color: "#fff", fontWeight: "800" }]}>
                           {subLabel(sub, lang)}
                         </Text>
                       </TouchableOpacity>
@@ -489,6 +541,53 @@ const styles = StyleSheet.create({
   windowIcon: { fontSize: 16 },
   windowText: { color: COLORS.textSecondary, fontSize: 12, fontWeight: "700" },
   nextHint: { color: COLORS.textMuted, fontSize: 11, marginTop: 10, letterSpacing: 0.5 },
+  notifPreview: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+  },
+  notifPreviewLabel: {
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 2,
+    marginBottom: 6,
+    color: COLORS.textMuted,
+  },
+  notifPreviewTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: COLORS.textPrimary,
+    marginBottom: 4,
+  },
+  notifPreviewBody: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    lineHeight: 18,
+  },
+  notifPreviewFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 8,
+  },
+  previewBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 12,
+    paddingVertical: 12,
+    borderRadius: 10,
+    backgroundColor: COLORS.like,
+  },
+  previewBtnText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 2,
+  },
   interestsHint: { color: COLORS.textMuted, fontSize: 12, lineHeight: 18, marginBottom: 14 },
   interestCat: { marginBottom: 14 },
   interestCatHead: {

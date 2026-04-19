@@ -373,7 +373,7 @@ async def get_merged_events(month: int, day: int, primary_lang: str) -> List[dic
     if cached and cached.get("cached_at") and cached["cached_at"].date() == today:
         return cached["events"]
 
-    results = await asyncio.gather(*[fetch_wiki(l, month, day) for l in WIKI_LANGS])
+    results = await asyncio.gather(*[fetch_wiki(lg, month, day) for lg in WIKI_LANGS])
     by_lang = dict(zip(WIKI_LANGS, results))
 
     # Bucket: key = (year, wikibase_id or normalized title)
@@ -688,6 +688,103 @@ async def events_today(
         "country": user_country,
         "count": len(projected),
         "events": projected,
+    }
+
+
+def _truncate_teaser(text: str, max_len: int = 95) -> str:
+    """Trim text to a curiosity-inducing teaser (ends with '...')."""
+    if not text:
+        return ""
+    t = text.strip().replace("\n", " ")
+    # Prefer cutting at sentence boundary before max_len
+    if len(t) <= max_len:
+        return t
+    cut = t[: max_len + 20]
+    # Try to cut at a space near max_len
+    space_idx = cut.rfind(" ", 0, max_len)
+    if space_idx > max_len - 30:
+        return cut[:space_idx].rstrip(" ,;:-") + "…"
+    return t[:max_len].rstrip(" ,;:-") + "…"
+
+
+@api.get("/events/teasers")
+async def events_teasers(
+    lang: Optional[Literal["it", "en", "es"]] = Query(None),
+    country: Optional[str] = Query(None),
+    month: Optional[int] = Query(None, ge=1, le=12),
+    day: Optional[int] = Query(None, ge=1, le=31),
+    count: int = Query(20, ge=1, le=50),
+    current=Depends(get_current_user),
+):
+    """Return short curiosity-inducing teasers for push notifications."""
+    user_lang = lang or current.get("language") or "it"
+    user_country = (country or current.get("country") or "IT").upper()
+    user_interests = set(current.get("interests", []) or [])
+
+    now = datetime.now(timezone.utc)
+    m = month or now.month
+    d = day or now.day
+    all_events = await get_merged_events(m, d, user_lang)
+
+    likes_agg = await db.interactions.aggregate([
+        {"$match": {"user_id": current["id"], "type": "like"}},
+        {"$group": {"_id": "$category", "count": {"$sum": 1}}},
+    ]).to_list(length=100)
+    liked_categories = {r["_id"]: r["count"] for r in likes_agg if r["_id"]}
+
+    disliked_list = await db.interactions.find(
+        {"user_id": current["id"], "type": "dislike"}
+    ).to_list(length=10000)
+    disliked_ids = {d2["event_id"] for d2 in disliked_list}
+
+    pool = [e for e in all_events if e["id"] not in disliked_ids]
+
+    def score(ev):
+        s = 0.0
+        if ev.get("image_url"):
+            s += 3
+        # Prefer round-number anniversaries for notifications (hook!)
+        for m2 in (10, 20, 25, 50, 75, 100, 150, 200, 500, 1000):
+            if ev["years_ago"] == m2:
+                s += 10
+                break
+        if ev["scope"] == "global":
+            s += 3
+        if user_country in ev.get("countries", []) or ev.get("origin") == user_country:
+            s += 4
+        if ev["category"] in liked_categories:
+            s += min(liked_categories[ev["category"]] * 1.2, 8)
+        cat_key = ev["category"]
+        if cat_key in user_interests:
+            s += 5
+        return -s
+
+    pool.sort(key=score)
+    pool = pool[:count]
+
+    teasers = []
+    for e in pool:
+        proj = project_event_for_lang(e, user_lang)
+        text = proj.get("text") or ""
+        title = proj.get("title") or ""
+        teasers.append({
+            "id": proj["id"],
+            "year": proj["year"],
+            "years_ago": proj["years_ago"],
+            "category": proj["category"],
+            "scope": proj["scope"],
+            "origin": proj.get("origin"),
+            "title": title,
+            "text_short": _truncate_teaser(text, 95),
+            "title_short": _truncate_teaser(title, 60),
+        })
+
+    return {
+        "date": {"month": m, "day": d, "year": now.year},
+        "lang": user_lang,
+        "country": user_country,
+        "count": len(teasers),
+        "teasers": teasers,
     }
 
 

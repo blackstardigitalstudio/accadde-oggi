@@ -6,6 +6,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { useAuth } from "../../src/contexts/AuthContext";
+import { useTheme } from "../../src/contexts/ThemeContext";
 import api from "../../src/api/client";
 import EventCard, { EventData } from "../../src/components/EventCard";
 import { COLORS } from "../../src/theme";
@@ -14,6 +15,7 @@ import { countryFlag } from "../../src/i18n/countries";
 
 export default function Feed() {
   const { user } = useAuth();
+  const { colors, mode } = useTheme();
   const { height, width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const bottomInset = insets.bottom || 12;
@@ -85,23 +87,23 @@ export default function Feed() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.center} testID="feed-loading">
-        <LinearGradient colors={["#0a0a0a", "#050505"]} style={StyleSheet.absoluteFillObject} />
-        <Text style={styles.brand}>ACCADDE</Text>
-        <Text style={[styles.brand, { color: COLORS.like }]}>OGGI</Text>
-        <ActivityIndicator color={COLORS.like} style={{ marginTop: 32 }} size="large" />
-        <Text style={styles.loadTxt}>{t(lang, "loadingFeed")}</Text>
+      <SafeAreaView style={[styles.center, { backgroundColor: colors.bg }]} testID="feed-loading">
+        {mode === "dark" && <LinearGradient colors={["#0a0a0a", "#050505"]} style={StyleSheet.absoluteFillObject} />}
+        <Text style={[styles.brand, { color: colors.textPrimary }]}>ACCADDE</Text>
+        <Text style={[styles.brand, { color: colors.like }]}>OGGI</Text>
+        <ActivityIndicator color={colors.like} style={{ marginTop: 32 }} size="large" />
+        <Text style={[styles.loadTxt, { color: colors.textSecondary }]}>{t(lang, "loadingFeed")}</Text>
       </SafeAreaView>
     );
   }
 
   if (err || events.length === 0) {
     return (
-      <SafeAreaView style={styles.center} testID="feed-error">
-        <Text style={styles.brand}>ACCADDE</Text>
-        <Text style={[styles.brand, { color: COLORS.like }]}>OGGI</Text>
-        <Text style={styles.errText}>{err || t(lang, "errorFeed")}</Text>
-        <TouchableOpacity style={styles.retryBtn} onPress={load} testID="feed-retry">
+      <SafeAreaView style={[styles.center, { backgroundColor: colors.bg }]} testID="feed-error">
+        <Text style={[styles.brand, { color: colors.textPrimary }]}>ACCADDE</Text>
+        <Text style={[styles.brand, { color: colors.like }]}>OGGI</Text>
+        <Text style={[styles.errText, { color: colors.textSecondary }]}>{err || t(lang, "errorFeed")}</Text>
+        <TouchableOpacity style={[styles.retryBtn, { backgroundColor: colors.like }]} onPress={load} testID="feed-retry">
           <Text style={styles.retryTxt}>{t(lang, "retry")}</Text>
         </TouchableOpacity>
       </SafeAreaView>
@@ -109,24 +111,24 @@ export default function Feed() {
   }
 
   return (
-    <View style={styles.container} testID="feed-screen">
+    <View style={[styles.container, { backgroundColor: colors.bg }]} testID="feed-screen">
       {/* Floating top header */}
-      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 8, backgroundColor: colors.headerBg, borderBottomColor: colors.border }]}>
         <View style={styles.headerRow}>
           <View>
             <Text style={styles.dateLabel}>{now.toUpperCase()}</Text>
-            <Text style={styles.headerBrand}>
-              ACCADDE <Text style={{ color: COLORS.like }}>OGGI</Text>
+            <Text style={[styles.headerBrand, { color: colors.textPrimary }]}>
+              ACCADDE <Text style={{ color: colors.like }}>OGGI</Text>
             </Text>
           </View>
           <View style={styles.counterBox}>
-            <Text style={styles.counterNum}>
+            <Text style={[styles.counterNum, { color: colors.textPrimary }]}>
               {String(activeIndex + 1).padStart(2, "0")}
-              <Text style={styles.counterTotal}>/{String(events.length).padStart(2, "0")}</Text>
+              <Text style={[styles.counterTotal, { color: colors.textMuted }]}>/{String(events.length).padStart(2, "0")}</Text>
             </Text>
-            <Text style={styles.counterLabel}>{t(lang, "events").toUpperCase()}</Text>
+            <Text style={[styles.counterLabel, { color: colors.textMuted }]}>{t(lang, "events").toUpperCase()}</Text>
           </View>
-          <View style={styles.countryBadge}>
+          <View style={[styles.countryBadge, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
             <Text style={styles.countryFlag}>{countryFlag(user?.country || "IT")}</Text>
           </View>
         </View>

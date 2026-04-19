@@ -67,39 +67,39 @@ export default function Explore() {
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll} contentContainerStyle={{ paddingHorizontal: 24, gap: 8 }}>
           <TouchableOpacity
             testID="scope-all"
-            style={[styles.chip, activeScope === "all" && styles.chipActive]}
+            style={[styles.chip, { borderColor: colors.border }, activeScope === "all" && { backgroundColor: colors.textPrimary, borderColor: colors.textPrimary }]}
             onPress={() => setActiveScope("all")}
           >
-            <Text style={[styles.chipText, activeScope === "all" && styles.chipTextActive]}>TUTTO</Text>
+            <Text style={[styles.chipText, { color: colors.textSecondary }, activeScope === "all" && { color: colors.bg }]}>TUTTO</Text>
           </TouchableOpacity>
           <TouchableOpacity
             testID="scope-global"
-            style={[styles.chip, activeScope === "global" && styles.chipActive]}
+            style={[styles.chip, { borderColor: colors.border }, activeScope === "global" && { backgroundColor: colors.textPrimary, borderColor: colors.textPrimary }]}
             onPress={() => setActiveScope("global")}
           >
-            <Globe size={14} color={activeScope === "global" ? "#050505" : COLORS.textSecondary} strokeWidth={2.5} />
-            <Text style={[styles.chipText, activeScope === "global" && styles.chipTextActive]}>MONDO</Text>
+            <Globe size={14} color={activeScope === "global" ? colors.bg : colors.textSecondary} strokeWidth={2.5} />
+            <Text style={[styles.chipText, { color: colors.textSecondary }, activeScope === "global" && { color: colors.bg }]}>MONDO</Text>
           </TouchableOpacity>
           <TouchableOpacity
             testID="scope-local"
-            style={[styles.chip, activeScope === "local" && styles.chipActive]}
+            style={[styles.chip, { borderColor: colors.border }, activeScope === "local" && { backgroundColor: colors.textPrimary, borderColor: colors.textPrimary }]}
             onPress={() => setActiveScope("local")}
           >
-            <MapPin size={14} color={activeScope === "local" ? "#050505" : COLORS.textSecondary} strokeWidth={2.5} />
-            <Text style={[styles.chipText, activeScope === "local" && styles.chipTextActive]}>
+            <MapPin size={14} color={activeScope === "local" ? colors.bg : colors.textSecondary} strokeWidth={2.5} />
+            <Text style={[styles.chipText, { color: colors.textSecondary }, activeScope === "local" && { color: colors.bg }]}>
               {countryFlag(user?.country || "IT")} {user?.country || "IT"}
             </Text>
           </TouchableOpacity>
         </ScrollView>
 
-        <Text style={styles.sectionLabel}>{t(lang, "allCategories").toUpperCase()}</Text>
+        <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>{t(lang, "allCategories").toUpperCase()}</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll} contentContainerStyle={{ paddingHorizontal: 24, gap: 8 }}>
           <TouchableOpacity
             testID="cat-all"
-            style={[styles.chip, activeCat === null && styles.chipActive]}
+            style={[styles.chip, { borderColor: colors.border }, activeCat === null && { backgroundColor: colors.textPrimary, borderColor: colors.textPrimary }]}
             onPress={() => setActiveCat(null)}
           >
-            <Text style={[styles.chipText, activeCat === null && styles.chipTextActive]}>
+            <Text style={[styles.chipText, { color: colors.textSecondary }, activeCat === null && { color: colors.bg }]}>
               {t(lang, "allCategories").toUpperCase()}
             </Text>
           </TouchableOpacity>
@@ -109,25 +109,26 @@ export default function Explore() {
               testID={`cat-${c}`}
               style={[
                 styles.chip,
+                { borderColor: colors.border },
                 activeCat === c && { backgroundColor: categoryColor(c), borderColor: categoryColor(c) },
               ]}
               onPress={() => setActiveCat(c)}
             >
-              <Text style={[styles.chipText, activeCat === c && styles.chipTextActive]}>
+              <Text style={[styles.chipText, { color: colors.textSecondary }, activeCat === c && { color: "#fff" }]}>
                 {t(lang, c as any).toUpperCase()}
               </Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
 
-        <Text style={styles.sectionLabel}>{t(lang, "filterDecade").toUpperCase()}</Text>
+        <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>{t(lang, "filterDecade").toUpperCase()}</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll} contentContainerStyle={{ paddingHorizontal: 24, gap: 8 }}>
           <TouchableOpacity
             testID="decade-all"
-            style={[styles.chip, activeDecade === null && styles.chipActive]}
+            style={[styles.chip, { borderColor: colors.border }, activeDecade === null && { backgroundColor: colors.textPrimary, borderColor: colors.textPrimary }]}
             onPress={() => setActiveDecade(null)}
           >
-            <Text style={[styles.chipText, activeDecade === null && styles.chipTextActive]}>
+            <Text style={[styles.chipText, { color: colors.textSecondary }, activeDecade === null && { color: colors.bg }]}>
               {t(lang, "allDecades").toUpperCase()}
             </Text>
           </TouchableOpacity>
@@ -135,24 +136,24 @@ export default function Explore() {
             <TouchableOpacity
               key={d}
               testID={`decade-${d}`}
-              style={[styles.chip, activeDecade === d && styles.chipActive]}
+              style={[styles.chip, { borderColor: colors.border }, activeDecade === d && { backgroundColor: colors.textPrimary, borderColor: colors.textPrimary }]}
               onPress={() => setActiveDecade(d)}
             >
-              <Text style={[styles.chipText, activeDecade === d && styles.chipTextActive]}>{d}s</Text>
+              <Text style={[styles.chipText, { color: colors.textSecondary }, activeDecade === d && { color: colors.bg }]}>{d}s</Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
 
         {loading ? (
           <View style={{ padding: 40, alignItems: "center" }}>
-            <ActivityIndicator color={COLORS.like} />
+            <ActivityIndicator color={colors.like} />
           </View>
         ) : (
           <View style={styles.grid}>
             {events.map((ev) => {
               const accent = categoryColor(ev.category);
               return (
-                <View key={ev.id} style={[styles.tile, { width: tileW }]} testID={`explore-tile-${ev.id}`}>
+                <View key={ev.id} style={[styles.tile, { width: tileW, backgroundColor: colors.surface }]} testID={`explore-tile-${ev.id}`}>
                   <ImageBackground
                     source={{
                       uri: ev.image_url ||
@@ -182,15 +183,15 @@ export default function Explore() {
                       )}
                     </View>
                     <View style={styles.tileBottom}>
-                      <Text style={styles.tileYear}>{ev.year}</Text>
-                      <Text style={styles.tileTitle} numberOfLines={2}>{ev.title}</Text>
+                      <Text style={[styles.tileYear, { color: "#fff" }]}>{ev.year}</Text>
+                      <Text style={[styles.tileTitle, { color: "#fff" }]} numberOfLines={2}>{ev.title}</Text>
                     </View>
                   </ImageBackground>
                 </View>
               );
             })}
             {events.length === 0 && (
-              <Text style={styles.empty}>Nessun risultato</Text>
+              <Text style={[styles.empty, { color: colors.textMuted }]}>Nessun risultato</Text>
             )}
           </View>
         )}

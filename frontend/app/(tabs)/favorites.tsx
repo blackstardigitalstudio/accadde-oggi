@@ -62,9 +62,9 @@ export default function Favorites() {
         </View>
       ) : events.length === 0 ? (
         <View style={styles.center} testID="favorites-empty">
-          <BookmarkX color={COLORS.textMuted} size={64} strokeWidth={1.5} />
-          <Text style={styles.emptyTitle}>{t(lang, "noFavorites")}</Text>
-          <Text style={styles.emptySub}>{t(lang, "noFavoritesSub")}</Text>
+          <BookmarkX color={colors.textMuted} size={64} strokeWidth={1.5} />
+          <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>{t(lang, "noFavorites")}</Text>
+          <Text style={[styles.emptySub, { color: colors.textMuted }]}>{t(lang, "noFavoritesSub")}</Text>
         </View>
       ) : (
         <FlatList
