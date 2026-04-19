@@ -76,7 +76,7 @@ export default function Profile() {
   const toggleNotif = async () => {
     const newState = !user?.notifications_enabled;
     if (newState) {
-      const res = await scheduleRandomDailyNotifications(notifWindow, lang);
+      const res = await scheduleRandomDailyNotifications(notifWindow, lang, 30, 3);
       if (!res.ok) {
         Alert.alert(
           lang === "it" ? "Permessi necessari" : lang === "es" ? "Permisos requeridos" : "Permissions required",
@@ -98,7 +98,7 @@ export default function Profile() {
   const changeWindow = async (w: Window) => {
     setNotifWindow(w);
     if (user?.notifications_enabled) {
-      await scheduleRandomDailyNotifications(w, lang);
+      await scheduleRandomDailyNotifications(w, lang, 30, 3);
       await loadNotifInfo();
     }
   };
@@ -228,10 +228,10 @@ export default function Profile() {
               <Text style={styles.settingHint}>
                 {user?.notifications_enabled
                   ? (lang === "it"
-                      ? `${notifInfo.count} programmate · orari casuali`
+                      ? `3-4 al giorno · orari casuali · ${notifInfo.count} programmate`
                       : lang === "es"
-                      ? `${notifInfo.count} programadas · horas aleatorias`
-                      : `${notifInfo.count} scheduled · random times`)
+                      ? `3-4 al día · horas aleatorias · ${notifInfo.count} programadas`
+                      : `3-4 per day · random times · ${notifInfo.count} scheduled`)
                   : (lang === "it" ? "Disattivate" : lang === "es" ? "Desactivadas" : "Disabled")}
               </Text>
             </View>

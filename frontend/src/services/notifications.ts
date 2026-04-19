@@ -101,14 +101,14 @@ function randomInRange(min: number, max: number) {
 }
 
 /**
- * Schedule N days of notifications with randomized times within a window.
- * Each day picks a random hour:minute inside the user's chosen window
- * and a random content template — so the user is never habituated to a fixed slot.
+ * Schedule N days of notifications with 3-4 randomized times per day inside a window,
+ * ensuring each slot uses a different template so the user is never habituated.
  */
 export async function scheduleRandomDailyNotifications(
   window: Window,
   lang: Lang,
-  days: number = SCHEDULE_DAYS
+  days: number = SCHEDULE_DAYS,
+  perDay: number = 3
 ): Promise<{ ok: boolean; count: number }> {
   const ok = await ensureNotificationPermissions();
   if (!ok) return { ok: false, count: 0 };
@@ -120,39 +120,48 @@ export async function scheduleRandomDailyNotifications(
   const now = new Date();
   let scheduled = 0;
 
+  // Pick a varying number between `perDay` and `perDay+1` so each day isn't identical
+  const pickCountForDay = () => perDay + (Math.random() < 0.35 ? 1 : 0);
+
   for (let i = 0; i < days; i++) {
-    const target = new Date(now);
-    target.setDate(now.getDate() + i);
+    const slots = pickCountForDay();
+    const span = range.end - range.start;
+    const segment = span / slots;
 
-    // Random hour+minute within window
-    const hourFloat = randomInRange(range.start, range.end);
-    const hour = Math.floor(hourFloat);
-    const minute = Math.floor((hourFloat - hour) * 60);
+    // Shuffle template indexes so we don't repeat inside the same day
+    const tplOrder = templates.map((_, idx) => idx).sort(() => Math.random() - 0.5);
 
-    target.setHours(hour, minute, 0, 0);
+    for (let s = 0; s < slots; s++) {
+      const segStart = range.start + segment * s;
+      const segEnd = segStart + segment;
+      // Random time inside the segment, with a 6-minute jitter from edges
+      const hourFloat = randomInRange(segStart + 0.1, segEnd - 0.1);
+      const hour = Math.floor(hourFloat);
+      const minute = Math.floor((hourFloat - hour) * 60);
 
-    // Skip if the computed time for today has already passed
-    if (target.getTime() <= now.getTime() + 60_000) continue;
+      const target = new Date(now);
+      target.setDate(now.getDate() + i);
+      target.setHours(hour, minute, 0, 0);
+      // Skip past-times for today
+      if (target.getTime() <= now.getTime() + 60_000) continue;
 
-    // Random template for variety
-    const tpl = templates[Math.floor(Math.random() * templates.length)];
+      const tpl = templates[tplOrder[s % tplOrder.length]];
 
-    try {
-      await Notifications.scheduleNotificationAsync({
-        identifier: `${NOTIFICATION_IDENTIFIER}-${target.getTime()}`,
-        content: {
-          title: tpl.title,
-          body: tpl.body,
-          sound: "default",
-        },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.DATE,
-          date: target,
-        },
-      });
-      scheduled++;
-    } catch (e) {
-      // keep going
+      try {
+        await Notifications.scheduleNotificationAsync({
+          identifier: `${NOTIFICATION_IDENTIFIER}-${target.getTime()}-${s}`,
+          content: {
+            title: tpl.title,
+            body: tpl.body,
+            sound: "default",
+          },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.DATE,
+            date: target,
+          },
+        });
+        scheduled++;
+      } catch {}
     }
   }
 

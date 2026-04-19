@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import api, { ACCESS_KEY, REFRESH_KEY } from "../api/client";
 import { Lang } from "../i18n/translations";
+import { scheduleRandomDailyNotifications, getScheduledInfo } from "../services/notifications";
 
 export type User = {
   id: string;
@@ -29,6 +30,16 @@ const AuthContext = createContext<AuthState | null>(null);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null | undefined>(undefined);
 
+  const ensureNotificationsScheduled = async (lang: Lang) => {
+    try {
+      const info = await getScheduledInfo();
+      // Only (re)schedule if nothing is queued yet — avoids thrashing
+      if (info.count < 5) {
+        await scheduleRandomDailyNotifications("random", lang, 30, 3);
+      }
+    } catch {}
+  };
+
   const loadMe = useCallback(async () => {
     const token = await AsyncStorage.getItem(ACCESS_KEY);
     if (!token) {
@@ -38,6 +49,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const { data } = await api.get("/auth/me");
       setUser(data);
+      if (data?.notifications_enabled) {
+        ensureNotificationsScheduled(data.language || "it");
+      }
     } catch {
       setUser(null);
     }
@@ -56,12 +70,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data } = await api.post("/auth/login", { email, password });
     await persistTokens(data.access_token, data.refresh_token);
     setUser(data.user);
+    if (data.user?.notifications_enabled) {
+      scheduleRandomDailyNotifications("random", data.user.language || "it", 30, 3);
+    }
   };
 
   const register = async (email: string, password: string, name: string, language: Lang, country: string) => {
     const { data } = await api.post("/auth/register", { email, password, name, language, country });
     await persistTokens(data.access_token, data.refresh_token);
     setUser(data.user);
+    // Default ON after registration - 3 notifications per day with random times
+    if (data.user?.notifications_enabled) {
+      scheduleRandomDailyNotifications("random", language, 30, 3);
+    }
   };
 
   const logout = async () => {

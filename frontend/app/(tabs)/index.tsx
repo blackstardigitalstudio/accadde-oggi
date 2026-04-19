@@ -135,10 +135,10 @@ export default function Feed() {
       <FlatList
         data={events}
         keyExtractor={(i) => i.id}
-        pagingEnabled
         snapToInterval={cardHeight}
         snapToAlignment="start"
         decelerationRate="fast"
+        disableIntervalMomentum
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.like} />
