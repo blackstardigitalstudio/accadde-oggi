@@ -57,12 +57,14 @@ def verify_password(pw: str, hashed: str) -> bool:
 
 def create_access_token(user_id: str, email: str) -> str:
     payload = {"sub": user_id, "email": email, "type": "access",
+               "iat": datetime.now(timezone.utc),
                "exp": datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_MINUTES)}
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
 def create_refresh_token(user_id: str) -> str:
     payload = {"sub": user_id, "type": "refresh",
+               "iat": datetime.now(timezone.utc),
                "exp": datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_DAYS)}
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
@@ -77,6 +79,7 @@ def user_public(user: dict) -> dict:
         "country": user.get("country", "IT"),
         "interests": user.get("interests", []),
         "notifications_enabled": user.get("notifications_enabled", True),
+        "has_security_question": bool(user.get("security_question")),
         "created_at": user.get("created_at").isoformat() if user.get("created_at") else None,
     }
 
@@ -95,6 +98,14 @@ async def get_current_user(
         user = await db.users.find_one({"_id": ObjectId(payload["sub"])})
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
+        # Session invalidation: if password changed after token was issued, reject
+        iat = payload.get("iat")
+        pwd_changed = user.get("password_changed_at")
+        if iat and pwd_changed:
+            # iat is a unix timestamp in seconds (int from jwt), pwd_changed is datetime
+            iat_ts = iat if isinstance(iat, (int, float)) else int(iat.timestamp())
+            if pwd_changed.replace(tzinfo=timezone.utc).timestamp() > iat_ts + 1:
+                raise HTTPException(status_code=401, detail="Session invalidated — please log in again")
         return user_public(user)
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
@@ -111,6 +122,8 @@ class RegisterBody(BaseModel):
     name: Optional[str] = ""
     language: Optional[Literal["it", "en", "es"]] = "it"
     country: Optional[str] = "IT"
+    security_question: Optional[str] = Field(default=None, max_length=200)
+    security_answer: Optional[str] = Field(default=None, min_length=2, max_length=100)
 
 
 class LoginBody(BaseModel):
@@ -120,6 +133,22 @@ class LoginBody(BaseModel):
 
 class RefreshBody(BaseModel):
     refresh_token: str
+
+
+class ForgotQuestionBody(BaseModel):
+    email: EmailStr
+
+
+class ForgotResetBody(BaseModel):
+    email: EmailStr
+    answer: str = Field(min_length=1, max_length=200)
+    new_password: str = Field(min_length=6)
+
+
+class SecurityQuestionBody(BaseModel):
+    current_password: str
+    question: str = Field(min_length=3, max_length=200)
+    answer: str = Field(min_length=2, max_length=100)
 
 
 class InteractionBody(BaseModel):
@@ -503,6 +532,7 @@ async def register(body: RegisterBody):
     doc = {
         "email": email,
         "password_hash": hash_password(body.password),
+        "password_changed_at": datetime.now(timezone.utc),
         "name": (body.name or email.split("@")[0]).strip(),
         "role": "user",
         "language": body.language or "it",
@@ -510,6 +540,9 @@ async def register(body: RegisterBody):
         "notifications_enabled": True,
         "created_at": datetime.now(timezone.utc),
     }
+    if body.security_question and body.security_answer:
+        doc["security_question"] = body.security_question.strip()
+        doc["security_answer_hash"] = hash_password(body.security_answer.strip().lower())
     res = await db.users.insert_one(doc)
     uid = str(res.inserted_id)
     return {
@@ -557,6 +590,65 @@ async def me(current=Depends(get_current_user)):
 @api.post("/auth/logout")
 async def logout(current=Depends(get_current_user)):
     return {"ok": True}
+
+
+# ============================================================
+# PASSWORD RECOVERY VIA SECURITY QUESTION
+# ============================================================
+# Generic "not found" message to avoid leaking email existence.
+_FORGOT_GENERIC_ERR = "Account non trovato o domanda segreta non impostata"
+
+
+@api.post("/auth/forgot/question")
+async def forgot_question(body: ForgotQuestionBody):
+    """Step 1 of password recovery — return user's security question."""
+    email = body.email.lower().strip()
+    user = await db.users.find_one({"email": email})
+    if not user or not user.get("security_question"):
+        # Don't leak whether email exists OR whether question is set
+        raise HTTPException(status_code=404, detail=_FORGOT_GENERIC_ERR)
+    return {"question": user["security_question"]}
+
+
+@api.post("/auth/forgot/reset")
+async def forgot_reset(body: ForgotResetBody):
+    """Step 2 of password recovery — verify answer and reset password."""
+    email = body.email.lower().strip()
+    user = await db.users.find_one({"email": email})
+    if not user or not user.get("security_answer_hash"):
+        raise HTTPException(status_code=404, detail=_FORGOT_GENERIC_ERR)
+    answer = body.answer.strip().lower()
+    if not bcrypt.checkpw(answer.encode("utf-8"), user["security_answer_hash"].encode("utf-8")):
+        raise HTTPException(status_code=401, detail="Risposta errata")
+
+    now = datetime.now(timezone.utc)
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {
+            "password_hash": hash_password(body.new_password),
+            "password_changed_at": now,
+        }},
+    )
+    return {"ok": True, "message": "Password reimpostata. Effettua il login."}
+
+
+@api.patch("/auth/security-question")
+async def update_security_question(
+    body: SecurityQuestionBody,
+    current=Depends(get_current_user),
+):
+    """Set or change security question (requires current password)."""
+    user = await db.users.find_one({"_id": ObjectId(current["id"])})
+    if not user or not verify_password(body.current_password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Password corrente errata")
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {
+            "security_question": body.question.strip(),
+            "security_answer_hash": hash_password(body.answer.strip().lower()),
+        }},
+    )
+    return {"ok": True, "has_security_question": True}
 
 
 @api.patch("/auth/me")

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert, Modal, TextInput, ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { LogOut, Heart, Bookmark, ThumbsDown, ChevronRight, Bell, Sun, Moon } from "lucide-react-native";
+import { LogOut, Heart, Bookmark, ThumbsDown, ChevronRight, Bell, Sun, Moon, Shield, X } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { useAuth } from "../../src/contexts/AuthContext";
 import { useTheme } from "../../src/contexts/ThemeContext";
@@ -13,6 +13,7 @@ import { COLORS, categoryColor } from "../../src/theme";
 import { t, T, LANGS, Lang } from "../../src/i18n/translations";
 import { COUNTRIES, countryFlag } from "../../src/i18n/countries";
 import { INTERESTS, subLabel } from "../../src/i18n/interests";
+import { SECURITY_QUESTIONS, SECURITY_LABELS } from "../../src/i18n/security";
 import {
   scheduleRandomDailyNotifications, cancelAllNotifications, getScheduledInfo, sendPreviewNotification, Window,
 } from "../../src/services/notifications";
@@ -25,7 +26,7 @@ type Stats = {
 };
 
 export default function Profile() {
-  const { user, logout, updateUser } = useAuth();
+  const { user, logout, updateUser, refreshMe } = useAuth();
   const { colors, mode, toggle: toggleTheme } = useTheme();
   const router = useRouter();
   const lang = (user?.language as Lang) || "it";
@@ -34,6 +35,15 @@ export default function Profile() {
   const [notifWindow, setNotifWindow] = useState<Window>("random");
   const [notifInfo, setNotifInfo] = useState<{ count: number; nextDate?: Date; nextTitle?: string; nextBody?: string }>({ count: 0 });
   const [previewSending, setPreviewSending] = useState(false);
+  const [secModalOpen, setSecModalOpen] = useState(false);
+  const [secCurrentPw, setSecCurrentPw] = useState("");
+  const [secQid, setSecQid] = useState("pet");
+  const [secCustom, setSecCustom] = useState("");
+  const [secAnswer, setSecAnswer] = useState("");
+  const [secSaving, setSecSaving] = useState(false);
+  const [secErr, setSecErr] = useState("");
+
+  const SEC_WARN_COLOR = "#FFB547";
 
   const loadStats = useCallback(async () => {
     try {
@@ -122,6 +132,38 @@ export default function Profile() {
     } else {
       // Also refresh info
       setTimeout(loadNotifInfo, 500);
+    }
+  };
+
+  const saveSecurityQuestion = async () => {
+    setSecErr("");
+    const selected = SECURITY_QUESTIONS[lang].find((q) => q.id === secQid);
+    const qText = secQid === "custom" ? secCustom.trim() : (selected?.label || "");
+    const aText = secAnswer.trim();
+    if (!secCurrentPw || !qText || qText.length < 3 || !aText || aText.length < 2) {
+      setSecErr(
+        lang === "it" ? "Compila tutti i campi" : lang === "es" ? "Completa todos los campos" : "Fill all fields"
+      );
+      return;
+    }
+    setSecSaving(true);
+    try {
+      await api.patch("/auth/security-question", {
+        current_password: secCurrentPw,
+        question: qText,
+        answer: aText,
+      });
+      await refreshMe();
+      setSecModalOpen(false);
+      setSecCurrentPw("");
+      setSecCustom("");
+      setSecAnswer("");
+      Alert.alert("✓", SECURITY_LABELS[lang].securitySet);
+    } catch (e: any) {
+      const d = e?.response?.data?.detail;
+      setSecErr(typeof d === "string" ? d : (lang === "it" ? "Errore" : "Error"));
+    } finally {
+      setSecSaving(false);
     }
   };
 
@@ -424,6 +466,35 @@ export default function Profile() {
         </View>
 
         <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>
+            🔐 {SECURITY_LABELS[lang].sectionTitle}
+          </Text>
+          {!user?.has_security_question && (
+            <Text style={[styles.interestsHint, { color: SEC_WARN_COLOR }]}>
+              ⚠️ {SECURITY_LABELS[lang].setSecurityHint}
+            </Text>
+          )}
+          {user?.has_security_question && (
+            <Text style={[styles.interestsHint, { color: colors.textMuted }]}>
+              ✓ {SECURITY_LABELS[lang].changeSecurityHint}
+            </Text>
+          )}
+          <TouchableOpacity
+            testID="security-open-modal"
+            style={[styles.secBtn, { backgroundColor: user?.has_security_question ? colors.border : colors.like }]}
+            onPress={() => setSecModalOpen(true)}
+          >
+            <Shield size={16} color={user?.has_security_question ? colors.textPrimary : "#fff"} strokeWidth={2.5} />
+            <Text style={[styles.secBtnText, { color: user?.has_security_question ? colors.textPrimary : "#fff" }]}>
+              {(user?.has_security_question
+                ? SECURITY_LABELS[lang].changeSecurity
+                : SECURITY_LABELS[lang].setSecurity
+              ).toUpperCase()}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.section}>
           <Text style={styles.aboutText}>{t(lang, "aboutText")}</Text>
         </View>
 
@@ -432,6 +503,115 @@ export default function Profile() {
           <Text style={styles.logoutText}>{t(lang, "logout").toUpperCase()}</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* SECURITY QUESTION MODAL */}
+      <Modal
+        visible={secModalOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSecModalOpen(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
+                {SECURITY_LABELS[lang].sectionTitle}
+              </Text>
+              <TouchableOpacity onPress={() => setSecModalOpen(false)} testID="security-close-modal">
+                <X size={22} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 520 }}>
+              <Text style={[styles.modalLabel, { color: colors.textMuted }]}>
+                {SECURITY_LABELS[lang].currentPassword.toUpperCase()}
+              </Text>
+              <TextInput
+                testID="security-current-password"
+                value={secCurrentPw}
+                onChangeText={setSecCurrentPw}
+                placeholder="••••••••"
+                placeholderTextColor={colors.textMuted}
+                secureTextEntry
+                style={[styles.modalInput, { color: colors.textPrimary, borderColor: colors.border }]}
+              />
+
+              <Text style={[styles.modalLabel, { color: colors.textMuted, marginTop: 16 }]}>
+                {SECURITY_LABELS[lang].questionLabel.toUpperCase()}
+              </Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={{ marginTop: 8 }}
+                contentContainerStyle={{ gap: 8, paddingRight: 20 }}
+              >
+                {SECURITY_QUESTIONS[lang].map((q) => (
+                  <TouchableOpacity
+                    key={q.id}
+                    testID={`security-q-${q.id}`}
+                    style={[
+                      styles.secQChip,
+                      { borderColor: colors.border },
+                      secQid === q.id && { backgroundColor: colors.like, borderColor: colors.like },
+                    ]}
+                    onPress={() => setSecQid(q.id)}
+                  >
+                    <Text
+                      numberOfLines={2}
+                      style={[
+                        styles.secQChipText,
+                        { color: colors.textSecondary },
+                        secQid === q.id && { color: "#fff", fontWeight: "800" },
+                      ]}
+                    >
+                      {q.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              {secQid === "custom" && (
+                <TextInput
+                  testID="security-custom"
+                  value={secCustom}
+                  onChangeText={setSecCustom}
+                  placeholder={SECURITY_LABELS[lang].customQuestion}
+                  placeholderTextColor={colors.textMuted}
+                  style={[styles.modalInput, { color: colors.textPrimary, borderColor: colors.border, marginTop: 10 }]}
+                />
+              )}
+
+              <Text style={[styles.modalLabel, { color: colors.textMuted, marginTop: 16 }]}>
+                {SECURITY_LABELS[lang].answerLabel.toUpperCase()}
+              </Text>
+              <TextInput
+                testID="security-answer"
+                value={secAnswer}
+                onChangeText={setSecAnswer}
+                placeholder={SECURITY_LABELS[lang].answerLabel}
+                placeholderTextColor={colors.textMuted}
+                autoCapitalize="none"
+                style={[styles.modalInput, { color: colors.textPrimary, borderColor: colors.border }]}
+              />
+
+              {secErr ? <Text style={styles.secErr}>{secErr}</Text> : null}
+
+              <TouchableOpacity
+                testID="security-save"
+                style={[styles.modalSaveBtn, { backgroundColor: colors.like, opacity: secSaving ? 0.6 : 1 }]}
+                disabled={secSaving}
+                onPress={saveSecurityQuestion}
+              >
+                {secSaving ? <ActivityIndicator color="#fff" /> : (
+                  <Text style={styles.modalSaveBtnText}>
+                    {SECURITY_LABELS[lang].saveSecurity.toUpperCase()}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -617,6 +797,77 @@ const styles = StyleSheet.create({
   interestsCount: {
     color: COLORS.textMuted, fontSize: 11, letterSpacing: 1.5, fontWeight: "700",
     textAlign: "right", marginTop: 6,
+  },
+  secBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 16,
+    paddingVertical: 14,
+    borderRadius: 10,
+  },
+  secBtnText: {
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 1.8,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.75)",
+    justifyContent: "flex-end",
+  },
+  modalCard: {
+    padding: 20,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    minHeight: 380,
+    maxHeight: "88%",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 18,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "900",
+    letterSpacing: 1.5,
+  },
+  modalLabel: {
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 2,
+  },
+  modalInput: {
+    fontSize: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 2,
+    marginTop: 4,
+  },
+  secQChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    maxWidth: 220,
+  },
+  secQChipText: { fontSize: 12, fontWeight: "600", lineHeight: 16 },
+  secErr: { color: COLORS.like, fontSize: 13, fontWeight: "700", marginTop: 14, textAlign: "center" },
+  modalSaveBtn: {
+    marginTop: 24,
+    paddingVertical: 16,
+    borderRadius: 10,
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  modalSaveBtnText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "900",
+    letterSpacing: 2,
   },
   logoutBtn: {
     flexDirection: "row",

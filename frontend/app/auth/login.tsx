@@ -133,6 +133,14 @@ export default function Login() {
                 )}
               </TouchableOpacity>
 
+              <Link href="/auth/forgot" asChild>
+                <TouchableOpacity testID="go-to-forgot" style={styles.forgotBtn}>
+                  <Text style={styles.forgotText}>
+                    {lang === "it" ? "Password dimenticata?" : lang === "es" ? "¿Contraseña olvidada?" : "Forgot password?"}
+                  </Text>
+                </TouchableOpacity>
+              </Link>
+
               <Link href="/auth/register" asChild>
                 <TouchableOpacity testID="go-to-register" style={styles.secondaryBtn}>
                   <Text style={styles.secondaryText}>
@@ -203,4 +211,11 @@ const styles = StyleSheet.create({
   secondaryBtn: { marginTop: 20, alignItems: "center" },
   secondaryText: { color: COLORS.textSecondary, fontSize: 14 },
   secondaryAccent: { color: COLORS.like, fontWeight: "700" },
+  forgotBtn: { marginTop: 14, alignItems: "center" },
+  forgotText: {
+    color: COLORS.textMuted,
+    fontSize: 13,
+    textDecorationLine: "underline",
+    fontWeight: "600",
+  },
 });

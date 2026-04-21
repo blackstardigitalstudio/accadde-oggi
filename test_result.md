@@ -126,6 +126,22 @@ backend:
     file: "/app/backend/server.py"
     stuck_count: 0
     priority: "high"
+
+  - task: "Password recovery — security question endpoints"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Added 3 new endpoints + user model changes: (1) POST /api/auth/forgot/question {email} → returns user's security question or 404 generic; (2) POST /api/auth/forgot/reset {email, answer, new_password} → verifies bcrypt hash of lowercased answer, resets password, updates password_changed_at to invalidate all existing sessions; (3) PATCH /api/auth/security-question {current_password, question, answer} (auth required) → set/change question. Register endpoint now accepts optional security_question + security_answer. user_public now returns 'has_security_question: bool'. Session invalidation implemented via password_changed_at check in get_current_user (compares JWT iat with user's password_changed_at; rejects if token was issued before last password change)."
+      - working: true
+        agent: "testing"
+        comment: "All password-recovery + security-question scenarios PASS (31/31 after D13 payload fix). A) Register: (A1) POST /api/auth/register with security_question='Nome del tuo primo animale?' + security_answer='Fido' → 200 with access_token, refresh_token, user {id, email, name, role, language, country, interests, notifications_enabled, has_security_question:true, created_at}; (A3) Register without security_question → 200 with has_security_question:false. B) forgot/question: (B4) Known email → 200 {question:'Nome del tuo primo animale?'} exact match; (B5) Unknown email nobody@nowhere.com → 404 'Account non trovato o domanda segreta non impostata'; (B6) Email without security_question → same generic 404 (no email-existence leak). C) forgot/reset: (C9) Wrong answer 'WrongAnswer' → 401 'Risposta errata'; (C8) Uppercase answer 'FIDO' → 200 {ok:true, message:'Password reimpostata. Effettua il login.'} confirming case-insensitive matching; (C7) Exact-case answer 'Fido' → 200 {ok:true}; (C10a) Login with OLD password → 401; (C10b) Login with NEW password 'NewPass123!' → 200; (C11) OLD access token (issued before reset) → GET /api/auth/me returns 401 'Session invalidated — please log in again' (password_changed_at > iat invalidation works correctly). D) security-question PATCH: (D14) No auth → 401 'Not authenticated'; (D12) Demo login + PATCH with correct current_password + question='Città di nascita?' + answer='Milano' → 200 {ok:true, has_security_question:true}; subsequent GET /api/auth/me shows has_security_question:true; (D13) Wrong current_password → 401 'Password corrente errata' (verified via manual re-run with ≥3-char question since the first automated attempt used 'X?' which tripped Pydantic min_length=3 validation — app behaviour is correct). E) Regression: POST /api/auth/login (demo) 200, GET /api/auth/me 200, GET /api/events/today?limit=20 200 (20 events), GET /api/events/teasers?count=5 200 (5 teasers), GET /api/events/stats 200, GET /api/img?url=<wikimedia> 200 image/png 48KB. Demo credentials (demo@accaddeoggi.app / Demo1234) remain valid after all tests."
+
     needs_retesting: false
     status_history:
       - working: "NA"
@@ -167,7 +183,7 @@ metadata:
 
 test_plan:
   current_focus:
-    - "GET /api/img — Wikimedia image proxy (public, cached, fallback PNG)"
+    - "Password recovery — security question endpoints"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -181,4 +197,6 @@ agent_communication:
     message: "✅ Backend GET /api/events/teasers fully tested and PASSING. 15/16 assertions passed; the 1 'failure' was a language-diff check that's actually expected fallback behavior (many April 19 events only exist in it.wiki so EN falls back to IT, which is explicitly allowed per review request). Confirmed with broader sampling: 2/30 events differ between lang=it and lang=en — e.g., 'Pope Benedict XVI elected' and 'Charles Manson sentencing' show correct English text. All required fields present; title_short ≤65 chars; text_short ≤100 chars, ending with '…' when truncated (14/20 samples). ?month=7&day=20&count=50 returns July 20 events including year 1969. ?count=5 caps results. Unauthenticated returns 401. Regression endpoints (auth/login, auth/me, events/today, events/stats) all return 200. No 500 errors. Main agent can summarize and finish — no code changes required."
   - agent: "testing"
     message: "✅ /api/img image proxy fully verified (10/10 tests pass). Valid Wikimedia URL → 200 image/jpeg 196KB; non-wikimedia → 400; missing url → 422; malformed wikimedia path → 200 with 68-byte image/png fallback (never 500); second call on same URL confirms cache hit (faster); no auth required (public as designed). Regression passes: POST /api/auth/login 200, GET /api/events/today?limit=20 200 (20 events), GET /api/events/teasers?count=5 200 (5 teasers), GET /api/events/stats 200. Minor note (no action needed): the Cache-Control response header is being overridden by the K8s ingress/CDN to 'no-store, no-cache, must-revalidate' rather than the 'public, max-age=86400, immutable' the FastAPI handler sets; the header IS present and server-side in-memory cache still works. Main agent can summarize and finish."
+  - agent: "testing"
+    message: "✅ Password recovery + security-question endpoints fully verified (31/31 scenarios pass). A) POST /api/auth/register: with security_question+security_answer → 200, tokens returned, user.has_security_question===true; without → has_security_question===false. B) POST /api/auth/forgot/question: valid email → 200 {question:...}; unknown email and email without question → both 404 with SAME generic detail 'Account non trovato o domanda segreta non impostata' (no email-existence leak). C) POST /api/auth/forgot/reset: wrong answer → 401 'Risposta errata'; uppercase 'FIDO' → 200 ok:true (case-insensitive works); exact-case 'Fido' → 200 ok:true; after reset, login with OLD password → 401, login with NEW password → 200; OLD access token issued before reset → 401 'Session invalidated — please log in again' (password_changed_at > iat invalidation working). D) PATCH /api/auth/security-question: no auth → 401; demo login + correct current_password + valid question/answer → 200 {ok:true, has_security_question:true}, next /auth/me confirms has_security_question===true; wrong current_password → 401 'Password corrente errata' (note: Pydantic enforces min_length=3 on question and min_length=2 on answer, so the password check only runs once schema passes — verified manually with valid-length fields). E) Regression ALL PASS: POST /api/auth/login (demo) 200, GET /api/auth/me 200, GET /api/events/today?limit=20 200 (20 events), GET /api/events/teasers?count=5 200 (5 teasers), GET /api/events/stats 200, GET /api/img?url=<wikimedia> 200 image. Demo credentials (demo@accaddeoggi.app / Demo1234) remain valid after all tests — password was NOT inadvertently changed. Main agent can summarize and finish."
 0 events including year 1969. ?count=5 caps results. Unauthenticated returns 401. Regression endpoints (auth/login, auth/me, events/today, events/stats) all return 200. No 500 errors. Main agent can summarize and finish — no code changes required."

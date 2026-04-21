@@ -11,6 +11,7 @@ import { useAuth } from "../../src/contexts/AuthContext";
 import { COLORS } from "../../src/theme";
 import { T, LANGS, Lang } from "../../src/i18n/translations";
 import { COUNTRIES, defaultCountryForLang } from "../../src/i18n/countries";
+import { SECURITY_QUESTIONS, SECURITY_LABELS } from "../../src/i18n/security";
 
 const HERO_IMAGES = [
   "https://static.prod-images.emergentagent.com/jobs/a02b6ded-2c91-4333-b8ce-d270275f4133/images/673c71cb98c6878d0d158148fc774b5d12c12aac651fbb5af7d3f12f34258511.png",
@@ -27,6 +28,9 @@ export default function Register() {
   const [name, setName] = useState("");
   const [language, setLanguage] = useState<Lang>("it");
   const [country, setCountry] = useState<string>("IT");
+  const [securityQid, setSecurityQid] = useState<string>("pet");
+  const [securityCustom, setSecurityCustom] = useState("");
+  const [securityAnswer, setSecurityAnswer] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [imgIdx, setImgIdx] = useState(0);
@@ -57,7 +61,20 @@ export default function Register() {
     if (!email) return;
     setLoading(true);
     try {
-      await register(email.trim(), password, name.trim(), language, country);
+      const questions = SECURITY_QUESTIONS[language];
+      const selected = questions.find((q) => q.id === securityQid);
+      let qText: string | undefined;
+      let aText: string | undefined;
+      if (selected) {
+        qText = securityQid === "custom" ? securityCustom.trim() : selected.label;
+        aText = securityAnswer.trim();
+        // Only send if both are meaningful
+        if (!qText || qText.length < 3 || !aText || aText.length < 2) {
+          qText = undefined;
+          aText = undefined;
+        }
+      }
+      await register(email.trim(), password, name.trim(), language, country, qText, aText);
       router.replace("/(tabs)");
     } catch (e: any) {
       const d = e?.response?.data?.detail;
@@ -179,6 +196,52 @@ export default function Register() {
                 ))}
               </ScrollView>
 
+              <Text style={[styles.label, { marginTop: 22 }]}>
+                🔐 {SECURITY_LABELS[language].sectionTitle}
+              </Text>
+              <Text style={styles.labelSub}>
+                {SECURITY_LABELS[language].answerHint}
+              </Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={{ marginTop: 10 }}
+                contentContainerStyle={{ gap: 8, paddingRight: 20 }}
+                keyboardShouldPersistTaps="handled"
+              >
+                {SECURITY_QUESTIONS[language].map((q) => (
+                  <TouchableOpacity
+                    key={q.id}
+                    testID={`register-secq-${q.id}`}
+                    style={[styles.secQChip, securityQid === q.id && styles.secQChipActive]}
+                    onPress={() => setSecurityQid(q.id)}
+                  >
+                    <Text style={[styles.secQText, securityQid === q.id && styles.chipTextActive]} numberOfLines={2}>
+                      {q.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              {securityQid === "custom" && (
+                <TextInput
+                  testID="register-security-custom"
+                  value={securityCustom}
+                  onChangeText={setSecurityCustom}
+                  placeholder={SECURITY_LABELS[language].customQuestion}
+                  placeholderTextColor={COLORS.textMuted}
+                  style={[styles.input, { marginTop: 10 }]}
+                />
+              )}
+              <TextInput
+                testID="register-security-answer"
+                value={securityAnswer}
+                onChangeText={setSecurityAnswer}
+                placeholder={SECURITY_LABELS[language].answerLabel}
+                placeholderTextColor={COLORS.textMuted}
+                autoCapitalize="none"
+                style={[styles.input, { marginTop: 12 }]}
+              />
+
               {err && <Text style={styles.err} testID="register-error">{err}</Text>}
 
               <TouchableOpacity
@@ -252,6 +315,17 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   countryChipActive: { backgroundColor: COLORS.like, borderColor: COLORS.like },
+  secQChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    maxWidth: 220,
+  },
+  secQChipActive: { backgroundColor: COLORS.like, borderColor: COLORS.like },
+  secQText: { color: COLORS.textSecondary, fontSize: 12, fontWeight: "600", lineHeight: 16 },
   countryText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: "600" },
   err: { color: COLORS.like, marginTop: 14, fontSize: 13, fontWeight: "600" },
   primaryBtn: {

@@ -13,16 +13,21 @@ export type User = {
   country: string;
   interests: string[];
   notifications_enabled: boolean;
+  has_security_question?: boolean;
   created_at?: string;
 };
 
 type AuthState = {
   user: User | null | undefined; // undefined = loading
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, name: string, language: Lang, country: string) => Promise<void>;
+  register: (
+    email: string, password: string, name: string, language: Lang, country: string,
+    security_question?: string, security_answer?: string
+  ) => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (patch: Partial<User>) => Promise<void>;
   setLanguage: (lang: Lang) => Promise<void>;
+  refreshMe: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -75,8 +80,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const register = async (email: string, password: string, name: string, language: Lang, country: string) => {
-    const { data } = await api.post("/auth/register", { email, password, name, language, country });
+  const register = async (
+    email: string, password: string, name: string, language: Lang, country: string,
+    security_question?: string, security_answer?: string
+  ) => {
+    const payload: any = { email, password, name, language, country };
+    if (security_question && security_answer) {
+      payload.security_question = security_question;
+      payload.security_answer = security_answer;
+    }
+    const { data } = await api.post("/auth/register", payload);
     await persistTokens(data.access_token, data.refresh_token);
     setUser(data.user);
     // Default ON after registration - 3 notifications per day with random times
@@ -100,7 +113,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, register, logout, updateUser, setLanguage }}>
+    <AuthContext.Provider value={{ user, login, register, logout, updateUser, setLanguage, refreshMe: loadMe }}>
       {children}
     </AuthContext.Provider>
   );
