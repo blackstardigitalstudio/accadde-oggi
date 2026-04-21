@@ -10,6 +10,7 @@ import { Heart, ThumbsDown, Bookmark, Share2, Globe, MapPin } from "lucide-react
 import { COLORS, categoryColor } from "../theme";
 import { t, Lang } from "../i18n/translations";
 import { countryFlag, countryLabel } from "../i18n/countries";
+import { proxyImage } from "../utils/image";
 
 export type EventData = {
   id: string;
@@ -48,7 +49,7 @@ type Props = {
 
 const EventCard: React.FC<Props> = ({ event, lang, height, onLike, onDislike, onSave }) => {
   const accent = categoryColor(event.category);
-  const img = event.image_url || FALLBACK_IMAGES[event.category] || FALLBACK_IMAGES.culture;
+  const img = proxyImage(event.image_url) || FALLBACK_IMAGES[event.category] || FALLBACK_IMAGES.culture;
   const insets = useSafeAreaInsets();
   const router = useRouter();
   // Header takes roughly insets.top + 72 (date + brand + bottom padding). Keep badges well clear.

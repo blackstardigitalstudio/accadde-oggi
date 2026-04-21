@@ -8,17 +8,20 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Globe, MapPin } from "lucide-react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useAuth } from "../../src/contexts/AuthContext";
+import { useTheme } from "../../src/contexts/ThemeContext";
 import api from "../../src/api/client";
 import { COLORS, categoryColor } from "../../src/theme";
 import { t } from "../../src/i18n/translations";
 import { countryFlag } from "../../src/i18n/countries";
 import { EventData } from "../../src/components/EventCard";
+import { proxyImage } from "../../src/utils/image";
 
 const CATS = ["wars", "science", "culture", "sports", "politics"];
 const DECADES = [1900, 1920, 1940, 1950, 1960, 1970, 1980, 1990, 2000, 2010, 2020];
 
 export default function Explore() {
   const { user } = useAuth();
+  const { colors, mode } = useTheme();
   const { width } = useWindowDimensions();
   const params = useLocalSearchParams<{ category?: string; scope?: string }>();
   const lang = (user?.language as any) || "it";
@@ -156,7 +159,7 @@ export default function Explore() {
                 <View key={ev.id} style={[styles.tile, { width: tileW, backgroundColor: colors.surface }]} testID={`explore-tile-${ev.id}`}>
                   <ImageBackground
                     source={{
-                      uri: ev.image_url ||
+                      uri: proxyImage(ev.image_url) ||
                         "https://static.prod-images.emergentagent.com/jobs/a02b6ded-2c91-4333-b8ce-d270275f4133/images/97909e4beaea0a1ecf60c1511a07e13c7f87e525c448733397e57392b734f653.png",
                     }}
                     style={styles.tileBg}

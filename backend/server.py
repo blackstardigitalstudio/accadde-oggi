@@ -14,6 +14,7 @@ import bcrypt
 import jwt
 import httpx
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Query
+from fastapi.responses import Response, StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -889,6 +890,74 @@ async def stats(current=Depends(get_current_user)):
 @api.get("/")
 async def root():
     return {"name": "Accadde Oggi API", "status": "ok"}
+
+
+# ============================================================
+# IMAGE PROXY — bypasses Wikipedia 429 rate limits on clients
+# by fetching with proper User-Agent and caching response.
+# Public (no auth) — safe because we restrict to upload.wikimedia.org only.
+# ============================================================
+_image_cache: dict = {}  # in-memory LRU-ish, cap ~200 images
+_IMAGE_CACHE_CAP = 200
+_wikimedia_semaphore = asyncio.Semaphore(4)  # max 4 concurrent Wikimedia requests
+
+# 1x1 transparent PNG as graceful fallback on upstream failure
+_EMPTY_PNG = bytes.fromhex(
+    "89504E470D0A1A0A0000000D49484452000000010000000108060000001F15C4890000000D49444154789C6300010000000500010D0A2DB40000000049454E44AE426082"
+)
+
+@api.get("/img")
+async def image_proxy(url: str = Query(..., min_length=8)):
+    if not url.startswith("https://upload.wikimedia.org/") and not url.startswith("https://commons.wikimedia.org/"):
+        raise HTTPException(status_code=400, detail="Only Wikimedia images are allowed")
+
+    cached = _image_cache.get(url)
+    if cached:
+        return Response(
+            content=cached["data"],
+            media_type=cached["content_type"],
+            headers={"Cache-Control": "public, max-age=86400, immutable"},
+        )
+
+    ua = "AccaddeOggi/1.0 (https://accaddeoggi.app; contact@accaddeoggi.app)"
+    data = None
+    ct = "image/jpeg"
+
+    async with _wikimedia_semaphore:
+        for attempt in range(2):  # up to 2 tries with short backoff
+            try:
+                async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as hc:
+                    r = await hc.get(url, headers={"User-Agent": ua, "Accept": "image/*"})
+                    if r.status_code == 200:
+                        data = r.content
+                        ct = r.headers.get("content-type", "image/jpeg")
+                        break
+                    if r.status_code == 429 and attempt == 0:
+                        await asyncio.sleep(0.8)
+                        continue
+            except httpx.HTTPError:
+                if attempt == 0:
+                    await asyncio.sleep(0.4)
+                    continue
+
+    if data is None:
+        # Graceful fallback — tiny transparent PNG with short cache so we retry soon
+        return Response(
+            content=_EMPTY_PNG,
+            media_type="image/png",
+            headers={"Cache-Control": "public, max-age=60"},
+        )
+
+    # Simple cache eviction
+    if len(_image_cache) >= _IMAGE_CACHE_CAP:
+        _image_cache.pop(next(iter(_image_cache)), None)
+    _image_cache[url] = {"data": data, "content_type": ct}
+
+    return Response(
+        content=data,
+        media_type=ct,
+        headers={"Cache-Control": "public, max-age=86400, immutable"},
+    )
 
 
 # ============================================================

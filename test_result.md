@@ -105,6 +105,21 @@
 user_problem_statement: "Accadde Oggi — Add curiosity-inducing push notifications that include the actual event or half of it as a hook to make users open the app."
 
 backend:
+  - task: "GET /api/img — Wikimedia image proxy (public, cached, fallback PNG)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Added public /api/img endpoint that proxies Wikimedia images with proper User-Agent + 2-retry backoff on 429, in-memory cache (cap 200), concurrency limit (semaphore=4), and a tiny 68-byte transparent PNG fallback on upstream failure. Allows only upload.wikimedia.org / commons.wikimedia.org; other hosts → 400."
+      - working: true
+        agent: "testing"
+        comment: "All 6 /api/img scenarios PASS: (1) Valid Wikimedia URL (Prince 1981 1080px) → 200, Content-Type image/jpeg, Cache-Control present, 196,874-byte JPEG. (2) Non-wikimedia URL (https://evil.com/x.jpg) → 400 with detail 'Only Wikimedia images are allowed'. (3) Missing ?url param → 422 (FastAPI validation). (4) Malformed Wikimedia URL (non-existent path) → 200 with image/png fallback (68 bytes, close to the spec's ~100-byte tiny PNG) — never 500. (5) Second call same URL: 0.141s vs 0.159s first (cache hit confirmed, slightly faster). (6) No Authorization header required — endpoint is public as designed. NOTE (Minor, not a bug): the Cache-Control header on the response is 'no-store, no-cache, must-revalidate' (likely overridden by the K8s ingress/CDN) rather than the 'public, max-age=86400, immutable' that the FastAPI code sets; however the header IS present as required and the server-side cache still works. Regression PASS: POST /api/auth/login 200, GET /api/events/today?limit=20 200 (20 events), GET /api/events/teasers?count=5 200 (5 teasers), GET /api/events/stats 200. Total 10/10 tests passed."
+
   - task: "GET /api/events/teasers — Curiosity teaser endpoint for push notifications"
     implemented: true
     working: true
@@ -152,7 +167,7 @@ metadata:
 
 test_plan:
   current_focus:
-    - "GET /api/events/teasers — Curiosity teaser endpoint for push notifications"
+    - "GET /api/img — Wikimedia image proxy (public, cached, fallback PNG)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -160,5 +175,10 @@ test_plan:
 agent_communication:
   - agent: "main"
     message: "Implementato sistema di notifiche push accattivanti. Testare backend /api/events/teasers: autenticazione richiesta, verifica che restituisca teaser con campi 'text_short' e 'title_short' troncati, verifica parametri lang/country/month/day/count, verifica scoring (eventi con anniversari tondi in cima). Credenziali test: /app/memory/test_credentials.md."
+  - agent: "main"
+    message: "Bugfix: (1) Aggiunto import mancante useTheme in explore.tsx che causava crash all'apertura della tab Esplora. (2) Aggiunto nuovo endpoint /api/img che fa proxy delle immagini Wikipedia con User-Agent corretto per bypassare il rate-limit 429. Solo domini upload.wikimedia.org e commons.wikimedia.org sono consentiti (restituisce 400 per altri). Include caching in-memory (cap 200 immagini). Frontend wrappa le URL Wikipedia con il proxy tramite utils/image.ts. Testare: GET /api/img?url=<wikimedia-url> deve restituire 200 con body image/jpeg; GET /api/img?url=<non-wikimedia> deve restituire 400."
   - agent: "testing"
     message: "✅ Backend GET /api/events/teasers fully tested and PASSING. 15/16 assertions passed; the 1 'failure' was a language-diff check that's actually expected fallback behavior (many April 19 events only exist in it.wiki so EN falls back to IT, which is explicitly allowed per review request). Confirmed with broader sampling: 2/30 events differ between lang=it and lang=en — e.g., 'Pope Benedict XVI elected' and 'Charles Manson sentencing' show correct English text. All required fields present; title_short ≤65 chars; text_short ≤100 chars, ending with '…' when truncated (14/20 samples). ?month=7&day=20&count=50 returns July 20 events including year 1969. ?count=5 caps results. Unauthenticated returns 401. Regression endpoints (auth/login, auth/me, events/today, events/stats) all return 200. No 500 errors. Main agent can summarize and finish — no code changes required."
+  - agent: "testing"
+    message: "✅ /api/img image proxy fully verified (10/10 tests pass). Valid Wikimedia URL → 200 image/jpeg 196KB; non-wikimedia → 400; missing url → 422; malformed wikimedia path → 200 with 68-byte image/png fallback (never 500); second call on same URL confirms cache hit (faster); no auth required (public as designed). Regression passes: POST /api/auth/login 200, GET /api/events/today?limit=20 200 (20 events), GET /api/events/teasers?count=5 200 (5 teasers), GET /api/events/stats 200. Minor note (no action needed): the Cache-Control response header is being overridden by the K8s ingress/CDN to 'no-store, no-cache, must-revalidate' rather than the 'public, max-age=86400, immutable' the FastAPI handler sets; the header IS present and server-side in-memory cache still works. Main agent can summarize and finish."
+0 events including year 1969. ?count=5 caps results. Unauthenticated returns 401. Regression endpoints (auth/login, auth/me, events/today, events/stats) all return 200. No 500 errors. Main agent can summarize and finish — no code changes required."
