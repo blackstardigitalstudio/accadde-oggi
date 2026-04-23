@@ -7,6 +7,7 @@ import {
 import { useRouter, Link } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
+import { Eye, EyeOff } from "lucide-react-native";
 import { useAuth } from "../../src/contexts/AuthContext";
 import { COLORS } from "../../src/theme";
 import { t, T } from "../../src/i18n/translations";
@@ -23,6 +24,7 @@ export default function Login() {
   const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [pwdVisible, setPwdVisible] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [imgIdx, setImgIdx] = useState(0);
@@ -105,18 +107,28 @@ export default function Login() {
               />
 
               <Text style={[styles.label, { marginTop: 22 }]}>{T[lang].password.toUpperCase()}</Text>
-              <TextInput
-                testID="login-password-input"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-                autoCapitalize="none"
-                returnKeyType="go"
-                onSubmitEditing={submit}
-                placeholder="••••••••"
-                placeholderTextColor={COLORS.textMuted}
-                style={styles.input}
-              />
+              <View style={styles.pwdRow}>
+                <TextInput
+                  testID="login-password-input"
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!pwdVisible}
+                  autoCapitalize="none"
+                  returnKeyType="go"
+                  onSubmitEditing={submit}
+                  placeholder="••••••••"
+                  placeholderTextColor={COLORS.textMuted}
+                  style={[styles.input, { flex: 1 }]}
+                />
+                <TouchableOpacity
+                  testID="login-toggle-pwd"
+                  onPress={() => setPwdVisible(!pwdVisible)}
+                  style={styles.eyeBtn}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                >
+                  {pwdVisible ? <EyeOff size={20} color={COLORS.textSecondary} /> : <Eye size={20} color={COLORS.textSecondary} />}
+                </TouchableOpacity>
+              </View>
 
               {err && <Text style={styles.err} testID="login-error">{err}</Text>}
 
@@ -218,4 +230,6 @@ const styles = StyleSheet.create({
     textDecorationLine: "underline",
     fontWeight: "600",
   },
+  pwdRow: { flexDirection: "row", alignItems: "flex-end" },
+  eyeBtn: { paddingHorizontal: 10, paddingBottom: 10 },
 });

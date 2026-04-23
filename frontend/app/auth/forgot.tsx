@@ -4,7 +4,7 @@ import {
   KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { ChevronLeft, Shield } from "lucide-react-native";
+import { ChevronLeft, Shield, Eye, EyeOff } from "lucide-react-native";
 import api from "../../src/api/client";
 import { COLORS } from "../../src/theme";
 import { SECURITY_LABELS } from "../../src/i18n/security";
@@ -20,6 +20,7 @@ export default function Forgot() {
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [pwdVisible, setPwdVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
@@ -125,15 +126,25 @@ export default function Forgot() {
               />
 
               <Text style={[styles.label, { marginTop: 18 }]}>{L.newPassword.toUpperCase()}</Text>
-              <TextInput
-                testID="forgot-new-password"
-                value={newPassword}
-                onChangeText={setNewPassword}
-                placeholder="min. 6"
-                placeholderTextColor={COLORS.textMuted}
-                secureTextEntry
-                style={styles.input}
-              />
+              <View style={styles.pwdRow}>
+                <TextInput
+                  testID="forgot-new-password"
+                  value={newPassword}
+                  onChangeText={setNewPassword}
+                  placeholder="min. 6"
+                  placeholderTextColor={COLORS.textMuted}
+                  secureTextEntry={!pwdVisible}
+                  style={[styles.input, { flex: 1 }]}
+                />
+                <TouchableOpacity
+                  testID="forgot-toggle-pwd"
+                  onPress={() => setPwdVisible(!pwdVisible)}
+                  style={styles.eyeBtn}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                >
+                  {pwdVisible ? <EyeOff size={20} color={COLORS.textSecondary} /> : <Eye size={20} color={COLORS.textSecondary} />}
+                </TouchableOpacity>
+              </View>
 
               {err ? <Text style={styles.err}>{err}</Text> : null}
 
@@ -203,4 +214,6 @@ const styles = StyleSheet.create({
   successIcon: { fontSize: 64 },
   successText: { color: COLORS.textPrimary, fontSize: 20, fontWeight: "900", marginTop: 16, textAlign: "center" },
   successSub: { color: COLORS.textMuted, fontSize: 14, marginTop: 10, textAlign: "center" },
+  pwdRow: { flexDirection: "row", alignItems: "flex-end" },
+  eyeBtn: { paddingHorizontal: 10, paddingBottom: 10 },
 });

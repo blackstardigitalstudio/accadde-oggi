@@ -7,6 +7,7 @@ import {
 import { useRouter, Link } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
+import { Eye, EyeOff } from "lucide-react-native";
 import { useAuth } from "../../src/contexts/AuthContext";
 import { COLORS } from "../../src/theme";
 import { T, LANGS, Lang } from "../../src/i18n/translations";
@@ -31,6 +32,7 @@ export default function Register() {
   const [securityQid, setSecurityQid] = useState<string>("pet");
   const [securityCustom, setSecurityCustom] = useState("");
   const [securityAnswer, setSecurityAnswer] = useState("");
+  const [pwdVisible, setPwdVisible] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [imgIdx, setImgIdx] = useState(0);
@@ -142,18 +144,27 @@ export default function Register() {
               />
 
               <Text style={[styles.label, { marginTop: 18 }]}>{T[language].password.toUpperCase()}</Text>
-              <TextInput
-                testID="register-password-input"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-                autoCapitalize="none"
-                placeholder="min. 6 caratteri"
-                placeholderTextColor={COLORS.textMuted}
-                style={styles.input}
-                returnKeyType="go"
-                onSubmitEditing={submit}
-              />
+              <View style={styles.pwdRow}>
+                <TextInput
+                  testID="register-password-input"
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!pwdVisible}
+                  autoCapitalize="none"
+                  placeholder="min. 6 caratteri"
+                  placeholderTextColor={COLORS.textMuted}
+                  style={[styles.input, { flex: 1 }]}
+                  returnKeyType="next"
+                />
+                <TouchableOpacity
+                  testID="register-toggle-pwd"
+                  onPress={() => setPwdVisible(!pwdVisible)}
+                  style={styles.eyeBtn}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                >
+                  {pwdVisible ? <EyeOff size={20} color={COLORS.textSecondary} /> : <Eye size={20} color={COLORS.textSecondary} />}
+                </TouchableOpacity>
+              </View>
 
               <Text style={[styles.label, { marginTop: 22 }]}>LINGUA</Text>
               <View style={styles.chipRow}>
@@ -326,6 +337,8 @@ const styles = StyleSheet.create({
   },
   secQChipActive: { backgroundColor: COLORS.like, borderColor: COLORS.like },
   secQText: { color: COLORS.textSecondary, fontSize: 12, fontWeight: "600", lineHeight: 16 },
+  pwdRow: { flexDirection: "row", alignItems: "flex-end" },
+  eyeBtn: { paddingHorizontal: 10, paddingBottom: 10 },
   countryText: { color: COLORS.textSecondary, fontSize: 13, fontWeight: "600" },
   err: { color: COLORS.like, marginTop: 14, fontSize: 13, fontWeight: "600" },
   primaryBtn: {

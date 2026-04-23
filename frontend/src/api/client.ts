@@ -30,11 +30,16 @@ api.interceptors.response.use(
   (res) => res,
   async (error) => {
     const original = error.config;
-    if (
-      error.response?.status === 401 &&
-      !original._retry &&
-      !original.url?.includes("/auth/")
-    ) {
+    // Skip refresh for auth endpoints that don't need it (login/register/refresh/forgot).
+    // BUT /auth/me MUST trigger refresh so the app stays logged in across access-token expiry.
+    const url: string = original?.url || "";
+    const skipRefresh =
+      url.includes("/auth/login") ||
+      url.includes("/auth/register") ||
+      url.includes("/auth/refresh") ||
+      url.includes("/auth/forgot");
+
+    if (error.response?.status === 401 && !original._retry && !skipRefresh) {
       original._retry = true;
       if (isRefreshing) {
         return new Promise((resolve, reject) => {

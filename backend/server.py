@@ -28,8 +28,8 @@ MONGO_URL = os.environ["MONGO_URL"]
 DB_NAME = os.environ["DB_NAME"]
 JWT_SECRET = os.environ["JWT_SECRET"]
 JWT_ALGORITHM = "HS256"
-ACCESS_TOKEN_MINUTES = 60 * 24
-REFRESH_TOKEN_DAYS = 30
+ACCESS_TOKEN_MINUTES = 60 * 24 * 90    # 90 days — "stay logged in" UX
+REFRESH_TOKEN_DAYS = 365                # 1 year
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
