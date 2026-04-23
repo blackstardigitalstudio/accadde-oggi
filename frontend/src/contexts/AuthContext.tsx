@@ -5,6 +5,7 @@ import { Lang } from "../i18n/translations";
 import { scheduleRandomDailyNotifications, getScheduledInfo } from "../services/notifications";
 
 const USER_CACHE_KEY = "accadde:user";
+const LANG_KEY = "accadde:lang";  // keep in sync with LanguageContext
 
 export type User = {
   id: string;
@@ -96,6 +97,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await persistTokens(data.access_token, data.refresh_token);
     setUser(data.user);
     await AsyncStorage.setItem(USER_CACHE_KEY, JSON.stringify(data.user));
+    // Sync app-wide language with user's preference
+    if (data.user?.language) {
+      await AsyncStorage.setItem(LANG_KEY, data.user.language);
+    }
     if (data.user?.notifications_enabled) {
       scheduleRandomDailyNotifications("random", data.user.language || "it", 30, 3);
     }
@@ -129,6 +134,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data } = await api.patch("/auth/me", patch);
     setUser(data);
     await AsyncStorage.setItem(USER_CACHE_KEY, JSON.stringify(data));
+    if (data?.language) {
+      await AsyncStorage.setItem(LANG_KEY, data.language);
+    }
   };
 
   const setLanguage = async (lang: Lang) => {

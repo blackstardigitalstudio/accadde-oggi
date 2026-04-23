@@ -9,6 +9,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Eye, EyeOff } from "lucide-react-native";
 import { useAuth } from "../../src/contexts/AuthContext";
+import { useLang } from "../../src/contexts/LanguageContext";
 import { COLORS } from "../../src/theme";
 import { t, T } from "../../src/i18n/translations";
 
@@ -29,7 +30,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [imgIdx, setImgIdx] = useState(0);
   const fade = useRef(new Animated.Value(1)).current;
-  const lang = "it";
+  const { lang, setLang } = useLang();
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -54,8 +55,7 @@ export default function Login() {
       setErr(typeof d === "string" ? d : t(lang, "errorLogin"));
     } finally {
       setLoading(false);
-    }
-  };
+    }  };
 
   return (
     <View style={styles.c} testID="login-screen">
@@ -82,13 +82,27 @@ export default function Login() {
             keyboardDismissMode="on-drag"
             showsVerticalScrollIndicator={false}
           >
+            <View style={styles.langRow}>
+              {(["it", "en", "es"] as const).map((l) => (
+                <TouchableOpacity
+                  key={l}
+                  onPress={() => setLang(l)}
+                  style={[styles.langChip, lang === l && styles.langChipActive]}
+                  testID={`login-lang-${l}`}
+                >
+                  <Text style={[styles.langFlag]}>{l === "it" ? "🇮🇹" : l === "en" ? "🇬🇧" : "🇪🇸"}</Text>
+                  <Text style={[styles.langTxt, lang === l && { color: "#fff" }]}>{l.toUpperCase()}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
             <View style={styles.brandBox}>
-              <Text style={styles.brand}>ACCADDE</Text>
+              <Text style={styles.brand}>{T[lang].accadde}</Text>
               <View style={styles.brandRow}>
                 <View style={styles.redLine} />
-                <Text style={[styles.brand, styles.brandAccent]}>OGGI</Text>
+                <Text style={[styles.brand, styles.brandAccent]}>{T[lang].oggi}</Text>
               </View>
-              <Text style={styles.tag}>LA STORIA · OGNI GIORNO · SU DI TE</Text>
+              <Text style={styles.tag}>{T[lang].brandSubtitle}</Text>
             </View>
 
             <View style={styles.form}>
@@ -148,7 +162,7 @@ export default function Login() {
               <Link href="/auth/forgot" asChild>
                 <TouchableOpacity testID="go-to-forgot" style={styles.forgotBtn}>
                   <Text style={styles.forgotText}>
-                    {lang === "it" ? "Password dimenticata?" : lang === "es" ? "¿Contraseña olvidada?" : "Forgot password?"}
+                    {t(lang, "forgotPassword")}
                   </Text>
                 </TouchableOpacity>
               </Link>
@@ -232,4 +246,30 @@ const styles = StyleSheet.create({
   },
   pwdRow: { flexDirection: "row", alignItems: "flex-end" },
   eyeBtn: { paddingHorizontal: 10, paddingBottom: 10 },
+  langRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 8,
+    marginBottom: 12,
+    marginTop: 4,
+  },
+  langChip: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    paddingHorizontal: 10, paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "rgba(0,0,0,0.35)",
+  },
+  langChipActive: {
+    backgroundColor: COLORS.like,
+    borderColor: COLORS.like,
+  },
+  langFlag: { fontSize: 14 },
+  langTxt: {
+    color: COLORS.textSecondary,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1,
+  },
 });

@@ -6,13 +6,14 @@ import {
 import { useRouter } from "expo-router";
 import { ChevronLeft, Shield, Eye, EyeOff } from "lucide-react-native";
 import api from "../../src/api/client";
+import { useLang } from "../../src/contexts/LanguageContext";
 import { COLORS } from "../../src/theme";
 import { SECURITY_LABELS } from "../../src/i18n/security";
-import { Lang } from "../../src/i18n/translations";
+import { Lang, t } from "../../src/i18n/translations";
 
 export default function Forgot() {
   const router = useRouter();
-  const [lang] = useState<Lang>("it");
+  const { lang } = useLang();
   const L = SECURITY_LABELS[lang];
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -166,7 +167,7 @@ export default function Forgot() {
               <Text style={styles.successIcon}>✅</Text>
               <Text style={styles.successText}>{L.passwordReset}</Text>
               <Text style={styles.successSub}>
-                Effettua il login con la nuova password.
+                {t(lang, "passwordResetSub")}
               </Text>
             </View>
           )}

@@ -9,6 +9,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Eye, EyeOff } from "lucide-react-native";
 import { useAuth } from "../../src/contexts/AuthContext";
+import { useLang } from "../../src/contexts/LanguageContext";
 import { COLORS } from "../../src/theme";
 import { T, LANGS, Lang } from "../../src/i18n/translations";
 import { COUNTRIES, defaultCountryForLang } from "../../src/i18n/countries";
@@ -24,10 +25,11 @@ const HERO_IMAGES = [
 export default function Register() {
   const router = useRouter();
   const { register } = useAuth();
+  const { lang: ctxLang, setLang: setCtxLang } = useLang();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
-  const [language, setLanguage] = useState<Lang>("it");
+  const [language, setLanguage] = useState<Lang>(ctxLang);
   const [country, setCountry] = useState<string>("IT");
   const [securityQid, setSecurityQid] = useState<string>("pet");
   const [securityCustom, setSecurityCustom] = useState("");
@@ -77,6 +79,7 @@ export default function Register() {
         }
       }
       await register(email.trim(), password, name.trim(), language, country, qText, aText);
+      await setCtxLang(language);
       router.replace("/(tabs)");
     } catch (e: any) {
       const d = e?.response?.data?.detail;

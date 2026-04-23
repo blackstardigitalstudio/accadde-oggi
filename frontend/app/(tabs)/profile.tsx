@@ -91,14 +91,10 @@ export default function Profile() {
     if (newState) {
       const res = await scheduleRandomDailyNotifications(notifWindow, lang, 14, 3);
       if (!res.ok) {
-        Alert.alert(
-          lang === "it" ? "Permessi necessari" : lang === "es" ? "Permisos requeridos" : "Permissions required",
-          lang === "it"
-            ? "Attiva le notifiche per Accadde Oggi dalle impostazioni del dispositivo."
-            : lang === "es"
-            ? "Activa las notificaciones para Un Día Como Hoy en ajustes."
-            : "Enable notifications in device settings."
-        );
+      Alert.alert(
+        t(lang, "permissionsNeeded"),
+        t(lang, "permissionsNotifHint")
+      );
         return;
       }
     } else {
@@ -122,12 +118,8 @@ export default function Profile() {
     setPreviewSending(false);
     if (!ok) {
       Alert.alert(
-        lang === "it" ? "Permessi necessari" : lang === "es" ? "Permisos requeridos" : "Permissions required",
-        lang === "it"
-          ? "Attiva le notifiche per vedere l'anteprima."
-          : lang === "es"
-          ? "Activa las notificaciones para ver la vista previa."
-          : "Enable notifications to see the preview."
+        t(lang, "permissionsNeeded"),
+        t(lang, "permissionsPreviewHint")
       );
     } else {
       // Also refresh info
@@ -161,7 +153,7 @@ export default function Profile() {
       Alert.alert("✓", SECURITY_LABELS[lang].securitySet);
     } catch (e: any) {
       const d = e?.response?.data?.detail;
-      setSecErr(typeof d === "string" ? d : (lang === "it" ? "Errore" : "Error"));
+      setSecErr(typeof d === "string" ? d : t(lang, "unknownError"));
     } finally {
       setSecSaving(false);
     }
