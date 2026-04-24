@@ -134,7 +134,7 @@ export default function Profile() {
     const aText = secAnswer.trim();
     if (!secCurrentPw || !qText || qText.length < 3 || !aText || aText.length < 2) {
       setSecErr(
-        lang === "it" ? "Compila tutti i campi" : lang === "es" ? "Completa todos los campos" : "Fill all fields"
+        t(lang, "fillAllFields")
       );
       return;
     }
@@ -203,11 +203,7 @@ export default function Profile() {
               <Sun size={18} color={colors.textPrimary} strokeWidth={2.2} />
             )}
             <Text style={[styles.themeToggleText, { color: colors.textPrimary }]}>
-              {lang === "it"
-                ? mode === "dark" ? "TEMA SCURO" : "TEMA CHIARO"
-                : lang === "es"
-                ? mode === "dark" ? "TEMA OSCURO" : "TEMA CLARO"
-                : mode === "dark" ? "DARK THEME" : "LIGHT THEME"}
+              {mode === "dark" ? t(lang, "darkTheme") : t(lang, "lightTheme")}
             </Text>
             <View style={[styles.themeSwitchPill, { backgroundColor: mode === "dark" ? COLORS.like : "#FCA311" }]}>
               <Text style={styles.themeSwitchPillText}>
@@ -283,9 +279,7 @@ export default function Profile() {
               <Text style={[styles.settingTitle, { color: colors.textPrimary }]}>PAESE</Text>
               <Text style={[styles.settingValue, { color: colors.textSecondary }]}>
                 {countryFlag(user?.country || "IT")}{"  "}
-                {COUNTRIES.find((x) => x.code === user?.country)?.[
-                  lang === "it" ? "label_it" : lang === "es" ? "label_es" : "label_en"
-                ] || user?.country}
+                {countryLabel(user?.country || "IT", lang)}
               </Text>
             </View>
             <ChevronRight color={colors.textMuted} size={20} style={{ transform: [{ rotate: showCountry ? "90deg" : "0deg" }] }} />
@@ -301,7 +295,7 @@ export default function Profile() {
                 >
                   <Text style={styles.langFlag}>{cn.flag}</Text>
                   <Text style={[styles.countryOptText, { color: colors.textSecondary }, user?.country === cn.code && { color: "#fff" }]}>
-                    {lang === "it" ? cn.label_it : lang === "es" ? cn.label_es : cn.label_en}
+                    {countryLabel(cn.code, lang)}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -313,11 +307,7 @@ export default function Profile() {
               <Text style={[styles.settingTitle, { color: colors.textPrimary }]}>{t(lang, "notifications").toUpperCase()}</Text>
               <Text style={[styles.settingHint, { color: colors.textMuted }]}>
                 {user?.notifications_enabled
-                  ? (lang === "it"
-                      ? `3-4 al giorno · orari casuali · ${notifInfo.count} programmate`
-                      : lang === "es"
-                      ? `3-4 al día · horas aleatorias · ${notifInfo.count} programadas`
-                      : `3-4 per day · random times · ${notifInfo.count} scheduled`)
+                  ? `${t(lang, "notifSchedInfo")} · ${notifInfo.count} ${t(lang, "nProgrammate")}`
                   : t(lang, "notificationsDisabled")}
               </Text>
             </View>
@@ -333,16 +323,14 @@ export default function Profile() {
           {user?.notifications_enabled && (
             <View style={styles.hourPickerBox}>
               <Text style={styles.hourLabel}>
-                {lang === "it" ? "FINESTRA ORARIA (ORARI CASUALI OGNI GIORNO)"
-                  : lang === "es" ? "FRANJA HORARIA (HORAS ALEATORIAS CADA DÍA)"
-                  : "TIME WINDOW (RANDOM TIME EACH DAY)"}
+                {t(lang, "notificationsWindow")}
               </Text>
               <View style={styles.windowGrid}>
                 {([
-                  { id: "morning" as Window, label_it: "Mattina 7–10", label_en: "Morning 7–10", label_es: "Mañana 7–10", icon: "☀️" },
-                  { id: "afternoon" as Window, label_it: "Pomeriggio 12–16", label_en: "Afternoon 12–16", label_es: "Tarde 12–16", icon: "🌤️" },
-                  { id: "evening" as Window, label_it: "Sera 18–22", label_en: "Evening 18–22", label_es: "Noche 18–22", icon: "🌙" },
-                  { id: "random" as Window, label_it: "Sorpresa 8–22", label_en: "Surprise 8–22", label_es: "Sorpresa 8–22", icon: "🎲" },
+                  { id: "morning" as Window, label: `${t(lang, "windowMorning")} 7–10`, icon: "☀️" },
+                  { id: "afternoon" as Window, label: `${t(lang, "windowAfternoon")} 12–16`, icon: "🌤️" },
+                  { id: "evening" as Window, label: `${t(lang, "windowEvening")} 18–22`, icon: "🌙" },
+                  { id: "random" as Window, label: `${t(lang, "windowRandom")} 8–22`, icon: "🎲" },
                 ]).map((w) => (
                   <TouchableOpacity
                     key={w.id}
@@ -352,7 +340,7 @@ export default function Profile() {
                   >
                     <Text style={styles.windowIcon}>{w.icon}</Text>
                     <Text style={[styles.windowText, notifWindow === w.id && { color: "#050505" }]}>
-                      {lang === "it" ? w.label_it : lang === "es" ? w.label_es : w.label_en}
+                      {w.label}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -360,7 +348,7 @@ export default function Profile() {
               {notifInfo.nextDate && (
                 <View style={[styles.notifPreview, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                   <Text style={[styles.notifPreviewLabel, { color: colors.textMuted }]}>
-                    {lang === "it" ? "ANTEPRIMA PROSSIMA NOTIFICA" : lang === "es" ? "VISTA PREVIA PRÓXIMA NOTIFICACIÓN" : "NEXT NOTIFICATION PREVIEW"}
+                    {t(lang, "notificationPreviewLabel")}
                   </Text>
                   {notifInfo.nextTitle && (
                     <Text style={[styles.notifPreviewTitle, { color: colors.textPrimary }]} numberOfLines={2}>
@@ -375,7 +363,7 @@ export default function Profile() {
                   <View style={styles.notifPreviewFooter}>
                     <Bell size={11} color={colors.textMuted} />
                     <Text style={[styles.nextHint, { color: colors.textMuted, marginTop: 0, marginLeft: 4 }]}>
-                      {lang === "it" ? "Prossima" : lang === "es" ? "Próxima" : "Next"}:{" "}
+                      {t(lang, "next")}:{" "}
                       {notifInfo.nextDate.toLocaleString()}
                     </Text>
                   </View>
@@ -392,8 +380,8 @@ export default function Profile() {
                 <Bell size={14} color="#fff" strokeWidth={2.5} />
                 <Text style={styles.previewBtnText}>
                   {previewSending
-                    ? (lang === "it" ? "INVIO..." : lang === "es" ? "ENVIANDO..." : "SENDING...")
-                    : (lang === "it" ? "PROVA NOTIFICA ORA" : lang === "es" ? "PROBAR NOTIFICACIÓN" : "TRY A NOTIFICATION")}
+                    ? t(lang, "sendingNotif")
+                    : t(lang, "tryNotification")}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -449,7 +437,7 @@ export default function Profile() {
             );
           })}
           <Text style={styles.interestsCount}>
-            {interestsSet.size} {lang === "it" ? "selezionati" : lang === "es" ? "seleccionados" : "selected"}
+            {interestsSet.size} {t(lang, "selectedCount")}
           </Text>
         </View>
 

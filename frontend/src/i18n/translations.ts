@@ -122,6 +122,11 @@ export const T: Translations = {
     aboutText: "Accadde Oggi ti mostra eventi storici avvenuti in questa stessa data nel passato, personalizzati sui tuoi gusti.",
     memberSince: "Membro dal",
     shareApp: "Condividi l'app",
+    darkTheme: "TEMA SCURO",
+    lightTheme: "TEMA CHIARO",
+    notifSchedInfo: "3-4 al giorno · orari casuali",
+    nProgrammate: "programmate",
+    selectedCount: "selezionati",
 
     // Time windows
     windowMorning: "Mattina",
@@ -243,6 +248,11 @@ export const T: Translations = {
     aboutText: "On This Day shows you historical events from this exact date in the past, tailored to your taste.",
     memberSince: "Member since",
     shareApp: "Share app",
+    darkTheme: "DARK THEME",
+    lightTheme: "LIGHT THEME",
+    notifSchedInfo: "3-4 per day · random times",
+    nProgrammate: "scheduled",
+    selectedCount: "selected",
 
     windowMorning: "Morning",
     windowAfternoon: "Afternoon",
@@ -362,6 +372,11 @@ export const T: Translations = {
     aboutText: "Un Día Como Hoy te muestra eventos históricos ocurridos en esta misma fecha en el pasado, según tus gustos.",
     memberSince: "Miembro desde",
     shareApp: "Compartir app",
+    darkTheme: "TEMA OSCURO",
+    lightTheme: "TEMA CLARO",
+    notifSchedInfo: "3-4 al día · horas aleatorias",
+    nProgrammate: "programadas",
+    selectedCount: "seleccionados",
 
     windowMorning: "Mañana",
     windowAfternoon: "Tarde",
