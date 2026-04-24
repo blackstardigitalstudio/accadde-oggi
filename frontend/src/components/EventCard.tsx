@@ -1,12 +1,12 @@
-import React, { memo } from "react";
+import React, { memo, useState } from "react";
 import {
   View, Text, ImageBackground, StyleSheet, TouchableOpacity,
-  useWindowDimensions, Share, Platform,
+  useWindowDimensions, Share, Platform, Modal, ScrollView, Linking,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { Heart, ThumbsDown, Bookmark, Share2, Globe, MapPin } from "lucide-react-native";
+import { Heart, ThumbsDown, Bookmark, Share2, Globe, MapPin, X, ExternalLink } from "lucide-react-native";
 import { COLORS, categoryColor } from "../theme";
 import { t, Lang } from "../i18n/translations";
 import { countryFlag, countryLabel } from "../i18n/countries";
@@ -52,6 +52,7 @@ const EventCard: React.FC<Props> = ({ event, lang, height, onLike, onDislike, on
   const img = proxyImage(event.image_url) || FALLBACK_IMAGES[event.category] || FALLBACK_IMAGES.culture;
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const [modalOpen, setModalOpen] = useState(false);
   // Header takes roughly insets.top + 72 (date + brand + bottom padding). Keep badges well clear.
   const topOffset = insets.top + 96;
 
@@ -101,7 +102,7 @@ const EventCard: React.FC<Props> = ({ event, lang, height, onLike, onDislike, on
           )}
           <Text style={[styles.scopeText, event.scope === "local" && { color: accent }]}>
             {event.scope === "global"
-              ? "MONDO"
+              ? t(lang, "global").toUpperCase()
               : countryLabel(event.origin || (event.countries?.[0] || ""), lang).toUpperCase()}
           </Text>
           {event.scope === "local" && (
@@ -124,7 +125,14 @@ const EventCard: React.FC<Props> = ({ event, lang, height, onLike, onDislike, on
 
         <Text style={styles.yearTag}>{event.year}</Text>
         <Text style={styles.title} numberOfLines={3}>{event.title}</Text>
-        <Text style={styles.desc} numberOfLines={5}>{event.text}</Text>
+        <TouchableOpacity activeOpacity={0.85} onPress={() => setModalOpen(true)} testID={`expand-${event.id}`}>
+          <Text style={styles.desc} numberOfLines={5}>{event.text}</Text>
+          {event.text && event.text.length > 140 && (
+            <Text style={[styles.readMore, { color: accent }]}>
+              {t(lang, "readMore").toUpperCase()} →
+            </Text>
+          )}
+        </TouchableOpacity>
 
         <View style={styles.actions}>
           <TouchableOpacity
@@ -175,6 +183,80 @@ const EventCard: React.FC<Props> = ({ event, lang, height, onLike, onDislike, on
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* FULL ARTICLE MODAL */}
+      <Modal
+        visible={modalOpen}
+        animationType="slide"
+        onRequestClose={() => setModalOpen(false)}
+        statusBarTranslucent
+      >
+        <View style={modalStyles.root}>
+          <ImageBackground source={{ uri: img }} style={modalStyles.heroImg} resizeMode="cover">
+            <LinearGradient
+              colors={["rgba(5,5,5,0.4)", "rgba(5,5,5,0.7)", "#050505"]}
+              style={StyleSheet.absoluteFillObject}
+            />
+            <TouchableOpacity
+              testID={`modal-close-${event.id}`}
+              style={[modalStyles.closeBtn, { top: insets.top + 12 }]}
+              onPress={() => setModalOpen(false)}
+            >
+              <X size={22} color="#fff" strokeWidth={2.5} />
+            </TouchableOpacity>
+            <View style={modalStyles.heroBottom}>
+              <View style={[modalStyles.catPillM, { borderLeftColor: accent }]}>
+                <Text style={[modalStyles.catTextM, { color: accent }]}>
+                  {t(lang, event.category as any).toUpperCase()}
+                </Text>
+              </View>
+              <Text style={modalStyles.yearTagM}>{event.year} · {event.years_ago} {yearsLabel.toLowerCase()}</Text>
+              <Text style={modalStyles.titleM}>{event.title}</Text>
+            </View>
+          </ImageBackground>
+
+          <ScrollView style={modalStyles.body} contentContainerStyle={{ paddingBottom: 40 }}>
+            <Text style={modalStyles.descFull}>{event.text}</Text>
+
+            {event.wiki_url && (
+              <TouchableOpacity
+                testID={`wiki-link-${event.id}`}
+                style={[modalStyles.wikiBtn, { borderColor: accent }]}
+                onPress={() => event.wiki_url && Linking.openURL(event.wiki_url)}
+              >
+                <ExternalLink size={16} color={accent} strokeWidth={2.5} />
+                <Text style={[modalStyles.wikiBtnText, { color: accent }]}>
+                  {lang === "it" ? "LEGGI SU WIKIPEDIA" : lang === "es" ? "LEER EN WIKIPEDIA" : "READ ON WIKIPEDIA"}
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            <View style={modalStyles.actionsM}>
+              <TouchableOpacity
+                style={[modalStyles.actionBtnM, event.liked && { backgroundColor: COLORS.like, borderColor: COLORS.like }]}
+                onPress={() => { onLike(); }}
+              >
+                <Heart size={20} color={event.liked ? "#fff" : COLORS.textPrimary} fill={event.liked ? "#fff" : "transparent"} strokeWidth={2} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[modalStyles.actionBtnM, event.disliked && { backgroundColor: COLORS.dislike, borderColor: COLORS.dislike }]}
+                onPress={() => { onDislike(); }}
+              >
+                <ThumbsDown size={20} color={event.disliked ? "#fff" : COLORS.textPrimary} fill={event.disliked ? "#fff" : "transparent"} strokeWidth={2} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[modalStyles.actionBtnM, event.saved && { backgroundColor: COLORS.textPrimary, borderColor: COLORS.textPrimary }]}
+                onPress={() => { onSave(); }}
+              >
+                <Bookmark size={20} color={event.saved ? "#050505" : COLORS.textPrimary} fill={event.saved ? COLORS.textPrimary : "transparent"} strokeWidth={2} />
+              </TouchableOpacity>
+              <TouchableOpacity style={modalStyles.actionBtnM} onPress={onShare}>
+                <Share2 size={20} color={COLORS.textPrimary} strokeWidth={2} />
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -276,4 +358,68 @@ const styles = StyleSheet.create({
   actionBtnActive: { backgroundColor: COLORS.like, borderColor: COLORS.like },
   actionBtnDislikeActive: { backgroundColor: COLORS.dislike, borderColor: COLORS.dislike },
   actionBtnSavedActive: { backgroundColor: COLORS.textPrimary, borderColor: COLORS.textPrimary },
+  readMore: {
+    marginTop: 6,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 2,
+  },
+});
+
+const modalStyles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: "#050505" },
+  heroImg: {
+    height: 320,
+    justifyContent: "flex-end",
+  },
+  closeBtn: {
+    position: "absolute",
+    right: 16,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    width: 40, height: 40, borderRadius: 20,
+    alignItems: "center", justifyContent: "center",
+    zIndex: 10,
+  },
+  heroBottom: {
+    paddingHorizontal: 24,
+    paddingBottom: 24,
+  },
+  catPillM: {
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(0,0,0,0.55)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderLeftWidth: 3,
+    borderRadius: 4,
+    marginBottom: 12,
+  },
+  catTextM: { fontSize: 10, fontWeight: "800", letterSpacing: 2 },
+  yearTagM: { color: COLORS.textSecondary, fontSize: 13, fontWeight: "700", letterSpacing: 3, marginBottom: 8 },
+  titleM: { color: COLORS.textPrimary, fontSize: 28, fontWeight: "900", lineHeight: 32, letterSpacing: -0.5 },
+  body: { flex: 1, paddingHorizontal: 24, paddingTop: 20 },
+  descFull: {
+    color: COLORS.textPrimary,
+    fontSize: 16,
+    lineHeight: 26,
+  },
+  wikiBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+    borderWidth: 2,
+    paddingVertical: 14,
+    borderRadius: 10,
+    marginTop: 24,
+  },
+  wikiBtnText: { fontSize: 12, fontWeight: "900", letterSpacing: 2 },
+  actionsM: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 24,
+    justifyContent: "center",
+  },
+  actionBtnM: {
+    width: 52, height: 52, borderRadius: 26,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderWidth: 1, borderColor: COLORS.border,
+    alignItems: "center", justifyContent: "center",
+  },
 });

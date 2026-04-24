@@ -318,7 +318,7 @@ export default function Profile() {
                       : lang === "es"
                       ? `3-4 al día · horas aleatorias · ${notifInfo.count} programadas`
                       : `3-4 per day · random times · ${notifInfo.count} scheduled`)
-                  : (lang === "it" ? "Disattivate" : lang === "es" ? "Desactivadas" : "Disabled")}
+                  : t(lang, "notificationsDisabled")}
               </Text>
             </View>
             <Switch
@@ -402,14 +402,10 @@ export default function Profile() {
 
         <View style={styles.section}>
           <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
-            {lang === "it" ? "INTERESSI · COSA VUOI VEDERE" : lang === "es" ? "INTERESES · QUÉ QUIERES VER" : "INTERESTS · WHAT YOU WANT TO SEE"}
+            {t(lang, "interestsTitle")}
           </Text>
           <Text style={[styles.interestsHint, { color: colors.textMuted }]}>
-            {lang === "it"
-              ? "Seleziona i tuoi argomenti preferiti. Le notizie corrispondenti saranno sempre in cima al feed."
-              : lang === "es"
-              ? "Selecciona tus temas favoritos. Las noticias relacionadas aparecerán primero en tu feed."
-              : "Pick your favorite topics. Matching events will always appear first in your feed."}
+            {t(lang, "interestsHint")}
           </Text>
 
           {Object.keys(INTERESTS).map((cat) => {
