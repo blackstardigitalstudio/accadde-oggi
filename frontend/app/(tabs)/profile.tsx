@@ -62,9 +62,9 @@ export default function Profile() {
   const doLogout = () => {
     Alert.alert(
       T[lang].logout,
-      "?",
+      t(lang, "logoutConfirm"),
       [
-        { text: "Annulla", style: "cancel" },
+        { text: t(lang, "cancel"), style: "cancel" },
         {
           text: T[lang].logout,
           style: "destructive",
@@ -150,7 +150,7 @@ export default function Profile() {
       setSecCurrentPw("");
       setSecCustom("");
       setSecAnswer("");
-      Alert.alert("✓", SECURITY_LABELS[lang].securitySet);
+      Alert.alert("✓", t(lang, "updated"));
     } catch (e: any) {
       const d = e?.response?.data?.detail;
       setSecErr(typeof d === "string" ? d : t(lang, "unknownError"));

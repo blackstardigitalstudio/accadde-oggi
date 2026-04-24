@@ -127,6 +127,12 @@ export const T: Translations = {
     notifSchedInfo: "3-4 al giorno · orari casuali",
     nProgrammate: "programmate",
     selectedCount: "selezionati",
+    cancel: "Annulla",
+    confirm: "Conferma",
+    logoutConfirm: "Sicuro di voler uscire?",
+    updated: "Aggiornato",
+    eventSingular: "evento",
+    eventPlural: "eventi",
 
     // Time windows
     windowMorning: "Mattina",
@@ -253,6 +259,12 @@ export const T: Translations = {
     notifSchedInfo: "3-4 per day · random times",
     nProgrammate: "scheduled",
     selectedCount: "selected",
+    cancel: "Cancel",
+    confirm: "Confirm",
+    logoutConfirm: "Sure you want to log out?",
+    updated: "Updated",
+    eventSingular: "event",
+    eventPlural: "events",
 
     windowMorning: "Morning",
     windowAfternoon: "Afternoon",
@@ -377,6 +389,12 @@ export const T: Translations = {
     notifSchedInfo: "3-4 al día · horas aleatorias",
     nProgrammate: "programadas",
     selectedCount: "seleccionados",
+    cancel: "Cancelar",
+    confirm: "Confirmar",
+    logoutConfirm: "¿Seguro que quieres cerrar sesión?",
+    updated: "Actualizado",
+    eventSingular: "evento",
+    eventPlural: "eventos",
 
     windowMorning: "Mañana",
     windowAfternoon: "Tarde",
@@ -398,4 +416,24 @@ export const T: Translations = {
 
 export const t = (lang: Lang, key: keyof typeof T.it): string => {
   return T[lang][key] || T.en[key] || (key as string);
+};
+
+/**
+ * Plural helper. Returns "1 evento" / "3 eventi" based on count.
+ * Uses Intl.PluralRules when available, falls back to simple n===1 check.
+ */
+export const tp = (
+  lang: Lang,
+  singularKey: keyof typeof T.it,
+  pluralKey: keyof typeof T.it,
+  count: number
+): string => {
+  let rule: Intl.LDMLPluralRule = "other";
+  try {
+    rule = new Intl.PluralRules(lang).select(count);
+  } catch {
+    rule = count === 1 ? "one" : "other";
+  }
+  const word = rule === "one" ? t(lang, singularKey) : t(lang, pluralKey);
+  return `${count} ${word}`;
 };
