@@ -152,6 +152,35 @@ backend:
         comment: "All backend tests PASS. Endpoint returns HTTP 200 with correct shape {date:{month,day,year}, lang, country, count, teasers:[...]}. All teasers contain required fields (id, year, years_ago, category, scope, title, title_short, text_short). text_short always ≤100 chars and ends with '…' when truncated (14/20 truncated examples verified). title_short always ≤65 chars. ?lang=en and ?lang=es correctly change returned 'lang' field; for today's date (Apr 19) 2/30 events have distinct EN text while 28/30 fall back to IT — fallback is acceptable per spec (e.g., Pope Benedict XVI election and Manson sentencing differ correctly in EN). ?month=7&day=20 returns July 20 events including 1969 entries. ?count=5 correctly returns ≤5 teasers. Unauthenticated request returns 401. No 500 errors observed. Regression: POST /api/auth/login, GET /api/auth/me, GET /api/events/today, GET /api/events/stats all still return 200."
 
 frontend:
+  - task: "AI event enrichment (client) — 'Approfondisci con AI' button"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/components/EventCard.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Added a sparkles button inside the 'Read more' modal that calls POST /api/events/enrich and displays the AI-generated deep dive (3-4 paragraphs with CONTEXT / WHAT HAPPENED / CONSEQUENCES / FUN FACT). Handles loading, error, and resets AI text when language or event changes."
+
+backend:
+  - task: "AI event enrichment endpoint (POST /api/events/enrich)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "New POST /api/events/enrich endpoint. Body: {event_id?, text, year, category?, lang}. Uses emergentintegrations LlmChat with openai/gpt-4o-mini and per-language system prompts (IT/EN/ES) to produce 3-4 short paragraphs (~900 chars) structured as CONTEXT / WHAT HAPPENED / CONSEQUENCES / FUN FACT. Requires auth. Returns {text, cached, lang}. In-memory cache keyed by (event_id or first 80 chars of text, lang), 500-entry FIFO cap. Manual smoke test (Apollo 11 IT) succeeded: ~1800-char narrative returned from gpt-4o-mini. Returns 503 if EMERGENT_LLM_KEY missing, 502 on upstream failure."
+      - working: true
+        agent: "testing"
+        comment: "All 19/19 assertions PASS via /app/backend_test_enrich.py. (1) Unauthenticated POST /api/events/enrich → 401 'Not authenticated'. (2a) Happy path IT (Apollo 11, year=1969, category=science, lang=it) → 200, text 1795 chars in Italian ('Nel contesto della Guerra Fredda, lo sbarco sulla Luna...'), cached=false, lang=it, took 9.7s. (2b) Second identical call → 200 cached=true, t=0.15s (vs 9.68s first), identical text — cache hit confirmed. (3) Happy path EN → 200, 1798 chars English ('The Apollo 11 mission marked a pivotal moment...'), lang=en, cached=false, 6.5s; response text differs from IT (distinct cache bucket verified). (4) Happy path ES → 200, 1796 chars Spanish ('El alunizaje del Apollo 11 en 1969 marcó un hito...'), lang=es, 9.6s. (5) lang='fr' → 422 (Pydantic Literal validation). (6) Missing year → 422. (7) Short text (5 chars 'short') → 422 (min_length=8). (8) Long text (2050 'A's) → 422 (max_length=2000). (9) Regression ALL PASS: POST /api/auth/login demo 200, GET /api/auth/me 200, GET /api/events/today?limit=20 200 (20 events), GET /api/events/teasers?count=5 200, GET /api/events/stats 200, GET /api/img?url=<Princess Alexandra 1080px wikimedia> 200 image/png 1.45MB. EMERGENT_LLM_KEY is configured in backend/.env and LlmChat + gpt-4o-mini integration works end-to-end."
+
+frontend_original:
   - task: "Push notifications with real event teasers + curiosity hooks"
     implemented: true
     working: "NA"
@@ -182,8 +211,7 @@ metadata:
   run_ui: false
 
 test_plan:
-  current_focus:
-    - "Password recovery — security question endpoints"
+  current_focus: []
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -201,4 +229,6 @@ agent_communication:
     message: "✅ /api/img image proxy fully verified (10/10 tests pass). Valid Wikimedia URL → 200 image/jpeg 196KB; non-wikimedia → 400; missing url → 422; malformed wikimedia path → 200 with 68-byte image/png fallback (never 500); second call on same URL confirms cache hit (faster); no auth required (public as designed). Regression passes: POST /api/auth/login 200, GET /api/events/today?limit=20 200 (20 events), GET /api/events/teasers?count=5 200 (5 teasers), GET /api/events/stats 200. Minor note (no action needed): the Cache-Control response header is being overridden by the K8s ingress/CDN to 'no-store, no-cache, must-revalidate' rather than the 'public, max-age=86400, immutable' the FastAPI handler sets; the header IS present and server-side in-memory cache still works. Main agent can summarize and finish."
   - agent: "testing"
     message: "✅ Password recovery + security-question endpoints fully verified (31/31 scenarios pass). A) POST /api/auth/register: with security_question+security_answer → 200, tokens returned, user.has_security_question===true; without → has_security_question===false. B) POST /api/auth/forgot/question: valid email → 200 {question:...}; unknown email and email without question → both 404 with SAME generic detail 'Account non trovato o domanda segreta non impostata' (no email-existence leak). C) POST /api/auth/forgot/reset: wrong answer → 401 'Risposta errata'; uppercase 'FIDO' → 200 ok:true (case-insensitive works); exact-case 'Fido' → 200 ok:true; after reset, login with OLD password → 401, login with NEW password → 200; OLD access token issued before reset → 401 'Session invalidated — please log in again' (password_changed_at > iat invalidation working). D) PATCH /api/auth/security-question: no auth → 401; demo login + correct current_password + valid question/answer → 200 {ok:true, has_security_question:true}, next /auth/me confirms has_security_question===true; wrong current_password → 401 'Password corrente errata' (note: Pydantic enforces min_length=3 on question and min_length=2 on answer, so the password check only runs once schema passes — verified manually with valid-length fields). E) Regression ALL PASS: POST /api/auth/login (demo) 200, GET /api/auth/me 200, GET /api/events/today?limit=20 200 (20 events), GET /api/events/teasers?count=5 200 (5 teasers), GET /api/events/stats 200, GET /api/img?url=<wikimedia> 200 image. Demo credentials (demo@accaddeoggi.app / Demo1234) remain valid after all tests — password was NOT inadvertently changed. Main agent can summarize and finish."
+  - agent: "testing"
+    message: "✅ Backend POST /api/events/enrich fully verified — 19/19 assertions PASS (see /app/backend_test_enrich.py). (1) Unauth → 401 'Not authenticated'. (2a) IT Apollo 11 (year=1969, category=science, lang=it) first call → 200, 1795-char Italian narrative ('Nel contesto della Guerra Fredda, lo sbarco sulla Luna...'), cached=false, 9.7s (gpt-4o-mini via emergentintegrations.LlmChat). (2b) Identical second call → cached=true, identical text, 0.15s (65× faster — in-memory cache works as designed). (3) EN → 200, 1798-char English text ('The Apollo 11 mission marked a pivotal moment...'), cached=false, distinct from IT (separate cache bucket confirmed). (4) ES → 200, 1796-char Spanish text ('El alunizaje del Apollo 11 en 1969 marcó un hito...'). (5) lang='fr' → 422 (Pydantic Literal validation). (6) Missing year → 422. (7) text 'short' (<8 chars) → 422. (8) text of 2050 'A' chars → 422. (9) Regression ALL PASS: POST /api/auth/login 200, GET /api/auth/me 200, GET /api/events/today?limit=20 200 (20 events), GET /api/events/teasers?count=5 200, GET /api/events/stats 200, GET /api/img?url=<Princess Alexandra 1080px wikimedia> 200 image/png 1.45MB. EMERGENT_LLM_KEY is configured in backend/.env; LiteLLM → openai/gpt-4o-mini round-trip succeeds (~6-10s per call). No code changes made. Main agent can summarize and finish."
 0 events including year 1969. ?count=5 caps results. Unauthenticated returns 401. Regression endpoints (auth/login, auth/me, events/today, events/stats) all return 200. No 500 errors. Main agent can summarize and finish — no code changes required."

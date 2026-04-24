@@ -155,6 +155,11 @@ export const T: Translations = {
     loadingFeed: "Raccogliamo la storia...",
     errorFeed: "Impossibile caricare il feed",
     events: "eventi",
+    readOnWikipedia: "Leggi su Wikipedia",
+    aiSummary: "Sintesi AI",
+    aiSummarize: "Approfondisci con AI",
+    aiGenerating: "Generazione in corso...",
+    aiUnavailable: "Impossibile generare al momento",
   },
   en: {
     appName: "On This Day",
@@ -289,6 +294,11 @@ export const T: Translations = {
     loadingFeed: "Gathering history...",
     errorFeed: "Could not load feed",
     events: "events",
+    readOnWikipedia: "Read on Wikipedia",
+    aiSummary: "AI summary",
+    aiSummarize: "Expand with AI",
+    aiGenerating: "Generating...",
+    aiUnavailable: "Unable to generate right now",
   },
   es: {
     appName: "Un Día Como Hoy",
@@ -423,6 +433,11 @@ export const T: Translations = {
     loadingFeed: "Recogiendo la historia...",
     errorFeed: "No se pudo cargar",
     events: "eventos",
+    readOnWikipedia: "Leer en Wikipedia",
+    aiSummary: "Resumen IA",
+    aiSummarize: "Ampliar con IA",
+    aiGenerating: "Generando...",
+    aiUnavailable: "No se pudo generar ahora",
   },
 };
 

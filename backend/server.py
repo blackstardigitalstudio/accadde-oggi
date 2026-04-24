@@ -20,6 +20,7 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, EmailStr
 from bson import ObjectId
+from emergentintegrations.llm.chat import LlmChat, UserMessage
 
 # ============================================================
 # CONFIG
@@ -30,6 +31,7 @@ JWT_SECRET = os.environ["JWT_SECRET"]
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_MINUTES = 60 * 24 * 90    # 90 days — "stay logged in" UX
 REFRESH_TOKEN_DAYS = 365                # 1 year
+EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
@@ -1050,6 +1052,100 @@ async def image_proxy(url: str = Query(..., min_length=8)):
         media_type=ct,
         headers={"Cache-Control": "public, max-age=86400, immutable"},
     )
+
+
+# ============================================================
+# AI ENRICHMENT — "Approfondisci con AI"
+# ============================================================
+class AiEnrichBody(BaseModel):
+    event_id: Optional[str] = None
+    text: str = Field(..., min_length=8, max_length=2000)
+    year: int = Field(..., ge=-3000, le=2100)
+    category: Optional[str] = None
+    lang: Literal["it", "en", "es"] = "it"
+
+# Simple in-memory cache keyed by (event_id|hash, lang)
+_ai_cache: dict = {}
+_AI_CACHE_CAP = 500
+
+_AI_PROMPT_BY_LANG = {
+    "it": (
+        "Sei uno storico divulgatore. Scrivi in italiano un approfondimento coinvolgente "
+        "(3-4 paragrafi brevi, massimo 900 caratteri totali) su questo evento storico. "
+        "Struttura: 1) CONTESTO (perché era importante), 2) COSA ACCADDE (fatti chiave), "
+        "3) CONSEGUENZE (impatto nel tempo), 4) CURIOSITÀ (dettaglio poco noto ma veritiero). "
+        "Tono narrativo ma preciso. NON inventare fatti: se non hai dati certi, resta sul generale. "
+        "Niente intestazioni, niente elenchi puntati, solo paragrafi separati da una riga vuota."
+    ),
+    "en": (
+        "You are a history storyteller. Write in English an engaging deep dive "
+        "(3-4 short paragraphs, at most 900 characters total) about this historical event. "
+        "Structure: 1) CONTEXT (why it mattered), 2) WHAT HAPPENED (key facts), "
+        "3) CONSEQUENCES (long-term impact), 4) FUN FACT (a lesser-known but accurate detail). "
+        "Narrative but precise. NEVER invent facts: if you are unsure, stay general. "
+        "No headers, no bullet lists — only paragraphs separated by a blank line."
+    ),
+    "es": (
+        "Eres un narrador histórico. Escribe en español una ampliación atractiva "
+        "(3-4 párrafos cortos, máximo 900 caracteres en total) sobre este evento histórico. "
+        "Estructura: 1) CONTEXTO (por qué importaba), 2) QUÉ PASÓ (hechos clave), "
+        "3) CONSECUENCIAS (impacto a largo plazo), 4) CURIOSIDAD (detalle poco conocido pero real). "
+        "Tono narrativo pero preciso. No inventes datos: si no estás seguro, sé general. "
+        "Sin títulos ni listas, solo párrafos separados por una línea en blanco."
+    ),
+}
+
+
+@api.post("/events/enrich")
+async def events_enrich(body: AiEnrichBody, current=Depends(get_current_user)):
+    """Generate an AI-crafted deep dive for an event via Emergent LLM (gpt-4o-mini)."""
+    if not EMERGENT_LLM_KEY:
+        raise HTTPException(status_code=503, detail="AI service not configured")
+
+    cache_key = f"{body.event_id or body.text[:80]}::{body.lang}"
+    cached = _ai_cache.get(cache_key)
+    if cached:
+        return {"text": cached, "cached": True, "lang": body.lang}
+
+    years_ago = datetime.now(timezone.utc).year - body.year
+    system_msg = _AI_PROMPT_BY_LANG.get(body.lang, _AI_PROMPT_BY_LANG["it"])
+    user_msg = (
+        f"Evento: {body.text}\n"
+        f"Anno: {body.year} ({years_ago} anni fa)\n"
+        f"Categoria: {body.category or 'generale'}\n\n"
+        f"Scrivi ora l'approfondimento."
+    )
+
+    try:
+        chat = (
+            LlmChat(
+                api_key=EMERGENT_LLM_KEY,
+                session_id=f"enrich-{cache_key}",
+                system_message=system_msg,
+            )
+            .with_model("openai", "gpt-4o-mini")
+            .with_params(temperature=0.6)
+        )
+        reply = await chat.send_message(UserMessage(text=user_msg))
+        reply = (reply or "").strip()
+        if not reply:
+            raise HTTPException(status_code=502, detail="Empty AI response")
+
+        # Trim overly long outputs
+        if len(reply) > 1800:
+            reply = reply[:1800].rsplit(" ", 1)[0] + "…"
+
+        # Cache (FIFO eviction)
+        if len(_ai_cache) >= _AI_CACHE_CAP:
+            _ai_cache.pop(next(iter(_ai_cache)), None)
+        _ai_cache[cache_key] = reply
+
+        return {"text": reply, "cached": False, "lang": body.lang}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.exception("AI enrich failed: %s", e)
+        raise HTTPException(status_code=502, detail="AI generation failed")
 
 
 # ============================================================

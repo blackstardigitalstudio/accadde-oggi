@@ -1,16 +1,17 @@
 import React, { memo, useState } from "react";
 import {
   View, Text, ImageBackground, StyleSheet, TouchableOpacity,
-  useWindowDimensions, Share, Platform, Modal, ScrollView, Linking,
+  useWindowDimensions, Share, Platform, Modal, ScrollView, Linking, ActivityIndicator,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { Heart, ThumbsDown, Bookmark, Share2, Globe, MapPin, X, ExternalLink } from "lucide-react-native";
+import { Heart, ThumbsDown, Bookmark, Share2, Globe, MapPin, X, ExternalLink, Sparkles } from "lucide-react-native";
 import { COLORS, categoryColor } from "../theme";
 import { t, Lang } from "../i18n/translations";
 import { countryFlag, countryLabel } from "../i18n/countries";
 import { proxyImage } from "../utils/image";
+import api from "../api/client";
 
 export type EventData = {
   id: string;
@@ -53,6 +54,36 @@ const EventCard: React.FC<Props> = ({ event, lang, height, onLike, onDislike, on
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
+  const [aiText, setAiText] = useState<string>("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState(false);
+
+  const doAiEnrich = async () => {
+    if (aiLoading || aiText) return;
+    setAiError(false);
+    setAiLoading(true);
+    try {
+      const { data } = await api.post("/events/enrich", {
+        event_id: event.id,
+        text: event.text,
+        year: event.year,
+        category: event.category,
+        lang,
+      });
+      setAiText(data?.text || "");
+      if (!data?.text) setAiError(true);
+    } catch {
+      setAiError(true);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  // Reset AI content when lang changes so user gets localized output
+  React.useEffect(() => {
+    setAiText("");
+    setAiError(false);
+  }, [lang, event.id]);
   // Header takes roughly insets.top + 72 (date + brand + bottom padding). Keep badges well clear.
   const topOffset = insets.top + 96;
 
@@ -218,6 +249,46 @@ const EventCard: React.FC<Props> = ({ event, lang, height, onLike, onDislike, on
           <ScrollView style={modalStyles.body} contentContainerStyle={{ paddingBottom: 40 }}>
             <Text style={modalStyles.descFull}>{event.text}</Text>
 
+            {/* AI ENRICHMENT SECTION */}
+            {!aiText && !aiLoading && (
+              <TouchableOpacity
+                testID={`ai-enrich-btn-${event.id}`}
+                style={[modalStyles.aiBtn, { borderColor: accent }]}
+                onPress={doAiEnrich}
+                activeOpacity={0.85}
+              >
+                <Sparkles size={16} color={accent} strokeWidth={2.5} />
+                <Text style={[modalStyles.aiBtnText, { color: accent }]}>
+                  ✨ {t(lang, "aiSummarize").toUpperCase()}
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {aiLoading && (
+              <View style={modalStyles.aiLoadingBox} testID={`ai-loading-${event.id}`}>
+                <ActivityIndicator color={accent} />
+                <Text style={[modalStyles.aiLoadingText, { color: accent }]}>
+                  {t(lang, "aiGenerating")}
+                </Text>
+              </View>
+            )}
+
+            {aiText ? (
+              <View style={[modalStyles.aiResultBox, { borderColor: accent }]} testID={`ai-result-${event.id}`}>
+                <View style={modalStyles.aiResultHeader}>
+                  <Sparkles size={14} color={accent} strokeWidth={2.5} />
+                  <Text style={[modalStyles.aiResultLabel, { color: accent }]}>
+                    {t(lang, "aiSummary").toUpperCase()}
+                  </Text>
+                </View>
+                <Text style={modalStyles.aiResultText}>{aiText}</Text>
+              </View>
+            ) : null}
+
+            {aiError && !aiLoading && (
+              <Text style={modalStyles.aiErr}>{t(lang, "aiUnavailable")}</Text>
+            )}
+
             {event.wiki_url && (
               <TouchableOpacity
                 testID={`wiki-link-${event.id}`}
@@ -226,7 +297,7 @@ const EventCard: React.FC<Props> = ({ event, lang, height, onLike, onDislike, on
               >
                 <ExternalLink size={16} color={accent} strokeWidth={2.5} />
                 <Text style={[modalStyles.wikiBtnText, { color: accent }]}>
-                  {lang === "it" ? "LEGGI SU WIKIPEDIA" : lang === "es" ? "LEER EN WIKIPEDIA" : "READ ON WIKIPEDIA"}
+                  {t(lang, "readOnWikipedia").toUpperCase()}
                 </Text>
               </TouchableOpacity>
             )}
@@ -410,6 +481,42 @@ const modalStyles = StyleSheet.create({
     marginTop: 24,
   },
   wikiBtnText: { fontSize: 12, fontWeight: "900", letterSpacing: 2 },
+  aiBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+    borderWidth: 2, borderStyle: "dashed",
+    paddingVertical: 14,
+    borderRadius: 10,
+    marginTop: 24,
+    backgroundColor: "rgba(230,57,70,0.05)",
+  },
+  aiBtnText: { fontSize: 12, fontWeight: "900", letterSpacing: 1.5 },
+  aiLoadingBox: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
+    paddingVertical: 18, marginTop: 24,
+    borderWidth: 1, borderColor: "rgba(230,57,70,0.25)", borderRadius: 10,
+    backgroundColor: "rgba(230,57,70,0.05)",
+  },
+  aiLoadingText: { fontSize: 13, fontWeight: "700", letterSpacing: 1 },
+  aiResultBox: {
+    marginTop: 24,
+    padding: 16,
+    borderLeftWidth: 3,
+    borderRadius: 8,
+    backgroundColor: "rgba(255,255,255,0.04)",
+  },
+  aiResultHeader: {
+    flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10,
+  },
+  aiResultLabel: { fontSize: 11, fontWeight: "900", letterSpacing: 2 },
+  aiResultText: {
+    color: COLORS.textPrimary,
+    fontSize: 15,
+    lineHeight: 24,
+  },
+  aiErr: {
+    color: COLORS.like, fontSize: 12, fontWeight: "700",
+    marginTop: 12, textAlign: "center",
+  },
   actionsM: {
     flexDirection: "row",
     gap: 10,
