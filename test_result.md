@@ -190,6 +190,8 @@ test_plan:
 
 agent_communication:
   - agent: "main"
+    message: "Applicati plurali avanzati con tp() su favorites/explore/profile. Corretti stringhe hardcoded nel Profilo: 'PAESE' → t(country), 'DISLIKE' → t(totalDislikes). Aggiunto contatore risultati in Explore ('50 eventi'/'50 events'/'50 eventos'). Fixato bug latente: import mancante di countryLabel in profile.tsx. Fixato import style inesistente styles.sectionTitle → styles.sectionLabel. Verifica screenshot su IT/EN/ES: tutte le stringhe tradotte correttamente, plurali funzionanti, nessun testo residuo in altre lingue. Nessuna modifica backend, quindi niente retest backend richiesto."
+  - agent: "main"
     message: "Implementato sistema di notifiche push accattivanti. Testare backend /api/events/teasers: autenticazione richiesta, verifica che restituisca teaser con campi 'text_short' e 'title_short' troncati, verifica parametri lang/country/month/day/count, verifica scoring (eventi con anniversari tondi in cima). Credenziali test: /app/memory/test_credentials.md."
   - agent: "main"
     message: "Bugfix: (1) Aggiunto import mancante useTheme in explore.tsx che causava crash all'apertura della tab Esplora. (2) Aggiunto nuovo endpoint /api/img che fa proxy delle immagini Wikipedia con User-Agent corretto per bypassare il rate-limit 429. Solo domini upload.wikimedia.org e commons.wikimedia.org sono consentiti (restituisce 400 per altri). Include caching in-memory (cap 200 immagini). Frontend wrappa le URL Wikipedia con il proxy tramite utils/image.ts. Testare: GET /api/img?url=<wikimedia-url> deve restituire 200 con body image/jpeg; GET /api/img?url=<non-wikimedia> deve restituire 400."

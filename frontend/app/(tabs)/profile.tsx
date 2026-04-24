@@ -10,8 +10,8 @@ import { useAuth } from "../../src/contexts/AuthContext";
 import { useTheme } from "../../src/contexts/ThemeContext";
 import api from "../../src/api/client";
 import { COLORS, categoryColor } from "../../src/theme";
-import { t, T, LANGS, Lang } from "../../src/i18n/translations";
-import { COUNTRIES, countryFlag } from "../../src/i18n/countries";
+import { t, tp, T, LANGS, Lang } from "../../src/i18n/translations";
+import { COUNTRIES, countryFlag, countryLabel } from "../../src/i18n/countries";
 import { INTERESTS, subLabel } from "../../src/i18n/interests";
 import { SECURITY_QUESTIONS, SECURITY_LABELS } from "../../src/i18n/security";
 import {
@@ -227,7 +227,7 @@ export default function Profile() {
           <View style={[styles.statBox, { backgroundColor: colors.surface, borderColor: colors.border }]} testID="stat-dislikes">
             <ThumbsDown color={colors.textMuted} size={22} strokeWidth={2} />
             <Text style={[styles.statNum, { color: colors.textPrimary }]}>{stats?.dislikes ?? 0}</Text>
-            <Text style={[styles.statLabel, { color: colors.textMuted }]}>DISLIKE</Text>
+            <Text style={[styles.statLabel, { color: colors.textMuted }]}>{t(lang, "totalDislikes").toUpperCase()}</Text>
           </View>
         </View>
 
@@ -276,7 +276,7 @@ export default function Profile() {
             onPress={() => setShowCountry((s) => !s)}
           >
             <View style={{ flex: 1 }}>
-              <Text style={[styles.settingTitle, { color: colors.textPrimary }]}>PAESE</Text>
+              <Text style={[styles.settingTitle, { color: colors.textPrimary }]}>{t(lang, "country").toUpperCase()}</Text>
               <Text style={[styles.settingValue, { color: colors.textSecondary }]}>
                 {countryFlag(user?.country || "IT")}{"  "}
                 {countryLabel(user?.country || "IT", lang)}
@@ -437,12 +437,12 @@ export default function Profile() {
             );
           })}
           <Text style={styles.interestsCount}>
-            {interestsSet.size} {t(lang, "selectedCount")}
+            {tp(lang, "selectedSingular", "selectedPlural", interestsSet.size)}
           </Text>
         </View>
 
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>
+          <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
             🔐 {SECURITY_LABELS[lang].sectionTitle}
           </Text>
           {!user?.has_security_question && (

@@ -11,7 +11,7 @@ import { useAuth } from "../../src/contexts/AuthContext";
 import { useTheme } from "../../src/contexts/ThemeContext";
 import api from "../../src/api/client";
 import { COLORS, categoryColor } from "../../src/theme";
-import { t } from "../../src/i18n/translations";
+import { t, tp } from "../../src/i18n/translations";
 import { countryFlag } from "../../src/i18n/countries";
 import { EventData } from "../../src/components/EventCard";
 import { proxyImage } from "../../src/utils/image";
@@ -64,6 +64,11 @@ export default function Explore() {
         <View style={styles.header}>
           <Text style={[styles.title, { color: colors.textPrimary }]}>{t(lang, "explore").toUpperCase()}</Text>
           <View style={styles.titleUnderline} />
+          {!loading && events.length > 0 && (
+            <Text style={[styles.sub, { color: colors.textMuted }]}>
+              {tp(lang, "eventSingular", "eventPlural", events.length)}
+            </Text>
+          )}
         </View>
 
         <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>{t(lang, "scope").toUpperCase()}</Text>
@@ -208,6 +213,7 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: 24, paddingTop: 12, paddingBottom: 20 },
   title: { color: COLORS.textPrimary, fontSize: 38, fontWeight: "900", letterSpacing: -1.5 },
   titleUnderline: { width: 48, height: 4, backgroundColor: COLORS.like, marginTop: 6 },
+  sub: { color: COLORS.textMuted, fontSize: 12, letterSpacing: 2, fontWeight: "700", marginTop: 10 },
   sectionLabel: { color: COLORS.textMuted, fontSize: 10, letterSpacing: 3, fontWeight: "800", marginTop: 18, marginLeft: 24 },
   chipScroll: { marginTop: 10 },
   chip: {

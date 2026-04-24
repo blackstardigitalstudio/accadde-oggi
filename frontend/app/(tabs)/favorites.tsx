@@ -11,7 +11,7 @@ import { useAuth } from "../../src/contexts/AuthContext";
 import { useTheme } from "../../src/contexts/ThemeContext";
 import api from "../../src/api/client";
 import { COLORS, categoryColor } from "../../src/theme";
-import { t } from "../../src/i18n/translations";
+import { t, tp } from "../../src/i18n/translations";
 import { EventData } from "../../src/components/EventCard";
 
 export default function Favorites() {
@@ -53,7 +53,7 @@ export default function Favorites() {
       <View style={styles.header}>
         <Text style={[styles.title, { color: colors.textPrimary }]}>{t(lang, "favorites").toUpperCase()}</Text>
         <View style={styles.titleUnderline} />
-        <Text style={[styles.sub, { color: colors.textMuted }]}>{events.length} {t(lang, "events")}</Text>
+        <Text style={[styles.sub, { color: colors.textMuted }]}>{tp(lang, "eventSingular", "eventPlural", events.length)}</Text>
       </View>
 
       {loading ? (
