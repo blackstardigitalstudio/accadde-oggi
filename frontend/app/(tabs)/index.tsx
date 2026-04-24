@@ -10,7 +10,7 @@ import { useTheme } from "../../src/contexts/ThemeContext";
 import api from "../../src/api/client";
 import EventCard, { EventData } from "../../src/components/EventCard";
 import { COLORS } from "../../src/theme";
-import { t } from "../../src/i18n/translations";
+import { t, T } from "../../src/i18n/translations";
 import { countryFlag } from "../../src/i18n/countries";
 
 export default function Feed() {
@@ -89,8 +89,8 @@ export default function Feed() {
     return (
       <SafeAreaView style={[styles.center, { backgroundColor: colors.bg }]} testID="feed-loading">
         {mode === "dark" && <LinearGradient colors={["#0a0a0a", "#050505"]} style={StyleSheet.absoluteFillObject} />}
-        <Text style={[styles.brand, { color: colors.textPrimary }]}>ACCADDE</Text>
-        <Text style={[styles.brand, { color: colors.like }]}>OGGI</Text>
+        <Text style={[styles.brand, { color: colors.textPrimary }]}>{T[lang].accadde}</Text>
+        <Text style={[styles.brand, { color: colors.like }]}>{T[lang].oggi}</Text>
         <ActivityIndicator color={colors.like} style={{ marginTop: 32 }} size="large" />
         <Text style={[styles.loadTxt, { color: colors.textSecondary }]}>{t(lang, "loadingFeed")}</Text>
       </SafeAreaView>
@@ -100,8 +100,8 @@ export default function Feed() {
   if (err || events.length === 0) {
     return (
       <SafeAreaView style={[styles.center, { backgroundColor: colors.bg }]} testID="feed-error">
-        <Text style={[styles.brand, { color: colors.textPrimary }]}>ACCADDE</Text>
-        <Text style={[styles.brand, { color: colors.like }]}>OGGI</Text>
+        <Text style={[styles.brand, { color: colors.textPrimary }]}>{T[lang].accadde}</Text>
+        <Text style={[styles.brand, { color: colors.like }]}>{T[lang].oggi}</Text>
         <Text style={[styles.errText, { color: colors.textSecondary }]}>{err || t(lang, "errorFeed")}</Text>
         <TouchableOpacity style={[styles.retryBtn, { backgroundColor: colors.like }]} onPress={load} testID="feed-retry">
           <Text style={styles.retryTxt}>{t(lang, "retry")}</Text>
@@ -118,7 +118,7 @@ export default function Feed() {
           <View>
             <Text style={styles.dateLabel}>{now.toUpperCase()}</Text>
             <Text style={[styles.headerBrand, { color: colors.textPrimary }]}>
-              ACCADDE <Text style={{ color: colors.like }}>OGGI</Text>
+              {T[lang].accadde} <Text style={{ color: colors.like }}>{T[lang].oggi}</Text>
             </Text>
           </View>
           <View style={styles.counterBox}>

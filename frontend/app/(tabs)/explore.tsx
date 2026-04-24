@@ -66,14 +66,14 @@ export default function Explore() {
           <View style={styles.titleUnderline} />
         </View>
 
-        <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>SCOPE</Text>
+        <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>{t(lang, "scope").toUpperCase()}</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll} contentContainerStyle={{ paddingHorizontal: 24, gap: 8 }}>
           <TouchableOpacity
             testID="scope-all"
             style={[styles.chip, { borderColor: colors.border }, activeScope === "all" && { backgroundColor: colors.textPrimary, borderColor: colors.textPrimary }]}
             onPress={() => setActiveScope("all")}
           >
-            <Text style={[styles.chipText, { color: colors.textSecondary }, activeScope === "all" && { color: colors.bg }]}>TUTTO</Text>
+            <Text style={[styles.chipText, { color: colors.textSecondary }, activeScope === "all" && { color: colors.bg }]}>{t(lang, "all").toUpperCase()}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             testID="scope-global"
@@ -81,7 +81,7 @@ export default function Explore() {
             onPress={() => setActiveScope("global")}
           >
             <Globe size={14} color={activeScope === "global" ? colors.bg : colors.textSecondary} strokeWidth={2.5} />
-            <Text style={[styles.chipText, { color: colors.textSecondary }, activeScope === "global" && { color: colors.bg }]}>MONDO</Text>
+            <Text style={[styles.chipText, { color: colors.textSecondary }, activeScope === "global" && { color: colors.bg }]}>{t(lang, "global").toUpperCase()}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             testID="scope-local"
@@ -194,7 +194,7 @@ export default function Explore() {
               );
             })}
             {events.length === 0 && (
-              <Text style={[styles.empty, { color: colors.textMuted }]}>Nessun risultato</Text>
+              <Text style={[styles.empty, { color: colors.textMuted }]}>{t(lang, "noResults")}</Text>
             )}
           </View>
         )}
