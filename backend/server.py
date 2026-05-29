@@ -45,6 +45,12 @@ app = FastAPI(title="Accadde Oggi API")
 api = APIRouter(prefix="/api")
 bearer_scheme = HTTPBearer(auto_error=False)
 
+
+@api.get("/health")
+async def health():
+    """Public health check (no auth) — used by the host's health probe."""
+    return {"status": "ok"}
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("accadde-oggi")
 
