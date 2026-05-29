@@ -14,13 +14,8 @@ import { COLORS } from "../../src/theme";
 import { T, LANGS, Lang } from "../../src/i18n/translations";
 import { COUNTRIES, defaultCountryForLang } from "../../src/i18n/countries";
 import { SECURITY_QUESTIONS, SECURITY_LABELS } from "../../src/i18n/security";
-
-const HERO_IMAGES = [
-  "https://static.prod-images.emergentagent.com/jobs/a02b6ded-2c91-4333-b8ce-d270275f4133/images/673c71cb98c6878d0d158148fc774b5d12c12aac651fbb5af7d3f12f34258511.png",
-  "https://static.prod-images.emergentagent.com/jobs/a02b6ded-2c91-4333-b8ce-d270275f4133/images/91eeb5e2e0c33bb659ee0f9741d501c71b2a6962b65db607090b3b3e9400001a.png",
-  "https://static.prod-images.emergentagent.com/jobs/a02b6ded-2c91-4333-b8ce-d270275f4133/images/0f03e64a6fc90c69eabc1afb14ff98e872163eee22d492646e222bceeb2e5ed6.png",
-  "https://static.prod-images.emergentagent.com/jobs/a02b6ded-2c91-4333-b8ce-d270275f4133/images/97909e4beaea0a1ecf60c1511a07e13c7f87e525c448733397e57392b734f653.png",
-];
+import { HERO_IMAGES } from "../../src/utils/categoryImages";
+import MadeInItaly from "../../src/components/MadeInItaly";
 
 export default function Register() {
   const router = useRouter();
@@ -92,7 +87,7 @@ export default function Register() {
   return (
     <View style={styles.c} testID="register-screen">
       <Animated.View style={[StyleSheet.absoluteFillObject, { opacity: fade }]}>
-        <ImageBackground source={{ uri: HERO_IMAGES[imgIdx] }} style={StyleSheet.absoluteFillObject} resizeMode="cover">
+        <ImageBackground source={HERO_IMAGES[imgIdx]} style={StyleSheet.absoluteFillObject} resizeMode="cover">
           <LinearGradient
             colors={["rgba(5,5,5,0.85)", "rgba(5,5,5,0.92)", "#050505"]}
             locations={[0, 0.5, 1]}
@@ -277,6 +272,8 @@ export default function Register() {
                 </TouchableOpacity>
               </Link>
             </View>
+
+            <MadeInItaly style={{ marginTop: 24, marginBottom: 4 }} />
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>

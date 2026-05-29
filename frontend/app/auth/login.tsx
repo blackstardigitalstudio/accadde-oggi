@@ -12,13 +12,11 @@ import { useAuth } from "../../src/contexts/AuthContext";
 import { useLang } from "../../src/contexts/LanguageContext";
 import { COLORS } from "../../src/theme";
 import { t, T } from "../../src/i18n/translations";
+import { HERO_IMAGES } from "../../src/utils/categoryImages";
+import MadeInItaly from "../../src/components/MadeInItaly";
 
-const HERO_IMAGES = [
-  "https://static.prod-images.emergentagent.com/jobs/a02b6ded-2c91-4333-b8ce-d270275f4133/images/673c71cb98c6878d0d158148fc774b5d12c12aac651fbb5af7d3f12f34258511.png",
-  "https://static.prod-images.emergentagent.com/jobs/a02b6ded-2c91-4333-b8ce-d270275f4133/images/91eeb5e2e0c33bb659ee0f9741d501c71b2a6962b65db607090b3b3e9400001a.png",
-  "https://static.prod-images.emergentagent.com/jobs/a02b6ded-2c91-4333-b8ce-d270275f4133/images/0f03e64a6fc90c69eabc1afb14ff98e872163eee22d492646e222bceeb2e5ed6.png",
-  "https://static.prod-images.emergentagent.com/jobs/a02b6ded-2c91-4333-b8ce-d270275f4133/images/97909e4beaea0a1ecf60c1511a07e13c7f87e525c448733397e57392b734f653.png",
-];
+const DEMO_EMAIL = "demo@accaddeoggi.app";
+const DEMO_PASSWORD = "Demo1234";
 
 export default function Login() {
   const router = useRouter();
@@ -57,11 +55,26 @@ export default function Login() {
       setLoading(false);
     }  };
 
+  const demoLogin = async () => {
+    Keyboard.dismiss();
+    setErr(null);
+    setLoading(true);
+    try {
+      await login(DEMO_EMAIL, DEMO_PASSWORD);
+      router.replace("/(tabs)");
+    } catch (e: any) {
+      const d = e?.response?.data?.detail;
+      setErr(typeof d === "string" ? d : t(lang, "errorLogin"));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <View style={styles.c} testID="login-screen">
       {/* Rotating hero background */}
       <Animated.View style={[StyleSheet.absoluteFillObject, { opacity: fade }]}>
-        <ImageBackground source={{ uri: HERO_IMAGES[imgIdx] }} style={StyleSheet.absoluteFillObject} resizeMode="cover">
+        <ImageBackground source={HERO_IMAGES[imgIdx]} style={StyleSheet.absoluteFillObject} resizeMode="cover">
           <LinearGradient
             colors={["rgba(5,5,5,0.85)", "rgba(5,5,5,0.92)", "#050505"]}
             locations={[0, 0.5, 1]}
@@ -159,6 +172,16 @@ export default function Login() {
                 )}
               </TouchableOpacity>
 
+              <TouchableOpacity
+                testID="login-demo-button"
+                style={styles.demoBtn}
+                onPress={demoLogin}
+                disabled={loading}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.demoBtnText}>{T[lang].tryDemo.toUpperCase()}</Text>
+              </TouchableOpacity>
+
               <Link href="/auth/forgot" asChild>
                 <TouchableOpacity testID="go-to-forgot" style={styles.forgotBtn}>
                   <Text style={styles.forgotText}>
@@ -175,6 +198,8 @@ export default function Login() {
                 </TouchableOpacity>
               </Link>
             </View>
+
+            <MadeInItaly style={styles.madeIn} />
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -234,9 +259,26 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     letterSpacing: 2,
   },
+  demoBtn: {
+    marginTop: 14,
+    paddingVertical: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.28)",
+    backgroundColor: "rgba(255,255,255,0.04)",
+  },
+  demoBtnText: {
+    color: COLORS.textPrimary,
+    fontSize: 13,
+    fontWeight: "800",
+    letterSpacing: 2,
+  },
   secondaryBtn: { marginTop: 20, alignItems: "center" },
   secondaryText: { color: COLORS.textSecondary, fontSize: 14 },
   secondaryAccent: { color: COLORS.like, fontWeight: "700" },
+  madeIn: { marginTop: 28, marginBottom: 4 },
   forgotBtn: { marginTop: 14, alignItems: "center" },
   forgotText: {
     color: COLORS.textMuted,

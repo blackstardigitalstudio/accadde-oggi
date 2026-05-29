@@ -14,6 +14,7 @@ import { t, tp, T, LANGS, Lang } from "../../src/i18n/translations";
 import { COUNTRIES, countryFlag, countryLabel } from "../../src/i18n/countries";
 import { INTERESTS, subLabel } from "../../src/i18n/interests";
 import { SECURITY_QUESTIONS, SECURITY_LABELS } from "../../src/i18n/security";
+import MadeInItaly from "../../src/components/MadeInItaly";
 import {
   scheduleRandomDailyNotifications, cancelAllNotifications, getScheduledInfo, sendPreviewNotification, Window,
 } from "../../src/services/notifications";
@@ -478,6 +479,8 @@ export default function Profile() {
           <LogOut color={COLORS.like} size={18} strokeWidth={2.5} />
           <Text style={styles.logoutText}>{t(lang, "logout").toUpperCase()}</Text>
         </TouchableOpacity>
+
+        <MadeInItaly style={{ marginTop: 28 }} />
       </ScrollView>
 
       {/* SECURITY QUESTION MODAL */}

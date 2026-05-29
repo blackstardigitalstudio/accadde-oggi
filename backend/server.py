@@ -5,6 +5,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
 import os
+import re
 import logging
 import asyncio
 from datetime import datetime, timezone, timedelta
@@ -20,7 +21,7 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, EmailStr
 from bson import ObjectId
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+from urllib.parse import unquote
 
 # ============================================================
 # CONFIG
@@ -31,7 +32,11 @@ JWT_SECRET = os.environ["JWT_SECRET"]
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_MINUTES = 60 * 24 * 90    # 90 days — "stay logged in" UX
 REFRESH_TOKEN_DAYS = 365                # 1 year
-EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
+# Optional free LLM provider (Groq — OpenAI-compatible, generous free tier).
+# If GROQ_API_KEY is set the deep-dive is written by the LLM; otherwise it falls
+# back to the real Wikipedia article extract (free, factual, no key required).
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
@@ -1063,6 +1068,7 @@ class AiEnrichBody(BaseModel):
     year: int = Field(..., ge=-3000, le=2100)
     category: Optional[str] = None
     lang: Literal["it", "en", "es"] = "it"
+    wiki_url: Optional[str] = None   # Wikipedia page URL of the event (for the real extract)
 
 # Simple in-memory cache keyed by (event_id|hash, lang)
 _ai_cache: dict = {}
@@ -1096,56 +1102,129 @@ _AI_PROMPT_BY_LANG = {
 }
 
 
+def _parse_wiki_url(url: str) -> Optional[tuple]:
+    """Extract (lang, title) from a Wikipedia page URL like
+    https://it.wikipedia.org/wiki/Sbarco_sulla_Luna -> ('it', 'Sbarco sulla Luna')."""
+    if not url:
+        return None
+    try:
+        m = re.search(r"https?://([a-z]{2,3})\.wikipedia\.org/wiki/(.+)$", url)
+        if not m:
+            return None
+        lang = m.group(1)
+        title = unquote(m.group(2)).replace("_", " ").split("#")[0].strip()
+        return (lang, title) if title else None
+    except Exception:
+        return None
+
+
+async def _fetch_wiki_extract(lang: str, title: str) -> str:
+    """Fetch the real plain-text intro (lead section) of a Wikipedia article. Free, factual."""
+    ua = "AccaddeOggi/1.0 (https://accaddeoggi.app; contact@accaddeoggi.app)"
+    url = f"https://{lang}.wikipedia.org/w/api.php"
+    params = {
+        "action": "query", "format": "json", "formatversion": "2",
+        "prop": "extracts", "exintro": "1", "explaintext": "1",
+        "redirects": "1", "titles": title,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as hc:
+            r = await hc.get(url, params=params,
+                             headers={"User-Agent": ua, "Api-User-Agent": ua, "Accept": "application/json"})
+            if r.status_code != 200:
+                return ""
+            pages = (r.json().get("query", {}) or {}).get("pages", []) or []
+            if not pages:
+                return ""
+            return (pages[0].get("extract") or "").strip()
+    except Exception as e:
+        logger.warning(f"Wiki extract error ({lang}/{title}): {e}")
+        return ""
+
+
+async def _llm_enrich(system_msg: str, user_msg: str) -> str:
+    """Optional: write a narrative deep dive via Groq (OpenAI-compatible, free tier)."""
+    if not GROQ_API_KEY:
+        return ""
+    try:
+        async with httpx.AsyncClient(timeout=40.0) as hc:
+            r = await hc.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
+                json={
+                    "model": GROQ_MODEL,
+                    "temperature": 0.6,
+                    "messages": [
+                        {"role": "system", "content": system_msg},
+                        {"role": "user", "content": user_msg},
+                    ],
+                },
+            )
+            if r.status_code != 200:
+                logger.warning(f"Groq {r.status_code}: {r.text[:200]}")
+                return ""
+            choices = r.json().get("choices", [])
+            return (choices[0]["message"]["content"] if choices else "").strip()
+    except Exception as e:
+        logger.warning(f"Groq enrich error: {e}")
+        return ""
+
+
 @api.post("/events/enrich")
 async def events_enrich(body: AiEnrichBody, current=Depends(get_current_user)):
-    """Generate an AI-crafted deep dive for an event via Emergent LLM (gpt-4o-mini)."""
-    if not EMERGENT_LLM_KEY:
-        raise HTTPException(status_code=503, detail="AI service not configured")
+    """Deep dive for an event.
 
+    Primary source = the real Wikipedia article intro (free, factual, multilingual).
+    If GROQ_API_KEY is configured, a narrative version is generated by a free LLM instead.
+    """
     cache_key = f"{body.event_id or body.text[:80]}::{body.lang}"
     cached = _ai_cache.get(cache_key)
     if cached:
         return {"text": cached, "cached": True, "lang": body.lang}
 
     years_ago = datetime.now(timezone.utc).year - body.year
-    system_msg = _AI_PROMPT_BY_LANG.get(body.lang, _AI_PROMPT_BY_LANG["it"])
-    user_msg = (
-        f"Evento: {body.text}\n"
-        f"Anno: {body.year} ({years_ago} anni fa)\n"
-        f"Categoria: {body.category or 'generale'}\n\n"
-        f"Scrivi ora l'approfondimento."
-    )
+    text = ""
+    source = "wikipedia"
 
-    try:
-        chat = (
-            LlmChat(
-                api_key=EMERGENT_LLM_KEY,
-                session_id=f"enrich-{cache_key}",
-                system_message=system_msg,
-            )
-            .with_model("openai", "gpt-4o-mini")
-            .with_params(temperature=0.6)
+    # 1) Real Wikipedia extract (no API key needed).
+    parsed = _parse_wiki_url(body.wiki_url or "")
+    if parsed:
+        wlang, wtitle = parsed
+        text = await _fetch_wiki_extract(wlang, wtitle)
+        # If the article is in another language than requested, try the requested edition too.
+        if wlang != body.lang:
+            alt = await _fetch_wiki_extract(body.lang, wtitle)
+            if len(alt) > 40:
+                text = alt
+
+    # 2) Optional free LLM (Groq) — produces a richer narrative when a key is set.
+    if GROQ_API_KEY:
+        system_msg = _AI_PROMPT_BY_LANG.get(body.lang, _AI_PROMPT_BY_LANG["it"])
+        user_msg = (
+            f"Evento: {body.text}\n"
+            f"Anno: {body.year} ({years_ago} anni fa)\n"
+            f"Categoria: {body.category or 'generale'}\n"
+            + (f"\nContesto da Wikipedia:\n{text[:1500]}\n" if text else "")
+            + "\nScrivi ora l'approfondimento."
         )
-        reply = await chat.send_message(UserMessage(text=user_msg))
-        reply = (reply or "").strip()
-        if not reply:
-            raise HTTPException(status_code=502, detail="Empty AI response")
+        llm = await _llm_enrich(system_msg, user_msg)
+        if len(llm) > 40:
+            text, source = llm, "llm"
 
-        # Trim overly long outputs
-        if len(reply) > 1800:
-            reply = reply[:1800].rsplit(" ", 1)[0] + "…"
+    text = (text or "").strip()
+    if not text:
+        raise HTTPException(status_code=502, detail="No deep-dive content available")
 
-        # Cache (FIFO eviction)
-        if len(_ai_cache) >= _AI_CACHE_CAP:
-            _ai_cache.pop(next(iter(_ai_cache)), None)
-        _ai_cache[cache_key] = reply
+    # Trim overly long outputs at a sentence/word boundary.
+    if len(text) > 1800:
+        text = text[:1800].rsplit(" ", 1)[0] + "…"
 
-        return {"text": reply, "cached": False, "lang": body.lang}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.exception("AI enrich failed: %s", e)
-        raise HTTPException(status_code=502, detail="AI generation failed")
+    # Cache (FIFO eviction)
+    if len(_ai_cache) >= _AI_CACHE_CAP:
+        _ai_cache.pop(next(iter(_ai_cache)), None)
+    _ai_cache[cache_key] = text
+
+    return {"text": text, "cached": False, "lang": body.lang, "source": source}
 
 
 # ============================================================

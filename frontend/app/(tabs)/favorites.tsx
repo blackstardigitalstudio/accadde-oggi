@@ -13,6 +13,7 @@ import api from "../../src/api/client";
 import { COLORS, categoryColor } from "../../src/theme";
 import { t, tp } from "../../src/i18n/translations";
 import { EventData } from "../../src/components/EventCard";
+import { eventImageSource } from "../../src/utils/categoryImages";
 
 export default function Favorites() {
   const { user } = useAuth();
@@ -84,10 +85,7 @@ export default function Favorites() {
                 activeOpacity={0.8}
               >
                 <ImageBackground
-                  source={{
-                    uri: item.image_url ||
-                      "https://static.prod-images.emergentagent.com/jobs/a02b6ded-2c91-4333-b8ce-d270275f4133/images/97909e4beaea0a1ecf60c1511a07e13c7f87e525c448733397e57392b734f653.png",
-                  }}
+                  source={eventImageSource(item.image_url, item.category)}
                   style={styles.rowImg}
                   imageStyle={{ borderRadius: 10 }}
                 >

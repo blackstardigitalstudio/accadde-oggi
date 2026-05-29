@@ -14,7 +14,7 @@ import { COLORS, categoryColor } from "../../src/theme";
 import { t, tp } from "../../src/i18n/translations";
 import { countryFlag } from "../../src/i18n/countries";
 import { EventData } from "../../src/components/EventCard";
-import { proxyImage } from "../../src/utils/image";
+import { eventImageSource } from "../../src/utils/categoryImages";
 
 const CATS = ["wars", "science", "culture", "sports", "politics"];
 const DECADES = [1900, 1920, 1940, 1950, 1960, 1970, 1980, 1990, 2000, 2010, 2020];
@@ -163,10 +163,7 @@ export default function Explore() {
               return (
                 <View key={ev.id} style={[styles.tile, { width: tileW, backgroundColor: colors.surface }]} testID={`explore-tile-${ev.id}`}>
                   <ImageBackground
-                    source={{
-                      uri: proxyImage(ev.image_url) ||
-                        "https://static.prod-images.emergentagent.com/jobs/a02b6ded-2c91-4333-b8ce-d270275f4133/images/97909e4beaea0a1ecf60c1511a07e13c7f87e525c448733397e57392b734f653.png",
-                    }}
+                    source={eventImageSource(ev.image_url, ev.category)}
                     style={styles.tileBg}
                     imageStyle={{ borderRadius: 12 }}
                   >

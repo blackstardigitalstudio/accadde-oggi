@@ -10,7 +10,7 @@ import { Heart, ThumbsDown, Bookmark, Share2, Globe, MapPin, X, ExternalLink, Sp
 import { COLORS, categoryColor } from "../theme";
 import { t, Lang } from "../i18n/translations";
 import { countryFlag, countryLabel } from "../i18n/countries";
-import { proxyImage } from "../utils/image";
+import { eventImageSource } from "../utils/categoryImages";
 import api from "../api/client";
 
 export type EventData = {
@@ -31,14 +31,6 @@ export type EventData = {
   saved?: boolean;
 };
 
-const FALLBACK_IMAGES: Record<string, string> = {
-  wars: "https://static.prod-images.emergentagent.com/jobs/a02b6ded-2c91-4333-b8ce-d270275f4133/images/673c71cb98c6878d0d158148fc774b5d12c12aac651fbb5af7d3f12f34258511.png",
-  science: "https://static.prod-images.emergentagent.com/jobs/a02b6ded-2c91-4333-b8ce-d270275f4133/images/91eeb5e2e0c33bb659ee0f9741d501c71b2a6962b65db607090b3b3e9400001a.png",
-  sports: "https://static.prod-images.emergentagent.com/jobs/a02b6ded-2c91-4333-b8ce-d270275f4133/images/0f03e64a6fc90c69eabc1afb14ff98e872163eee22d492646e222bceeb2e5ed6.png",
-  culture: "https://static.prod-images.emergentagent.com/jobs/a02b6ded-2c91-4333-b8ce-d270275f4133/images/97909e4beaea0a1ecf60c1511a07e13c7f87e525c448733397e57392b734f653.png",
-  politics: "https://static.prod-images.emergentagent.com/jobs/a02b6ded-2c91-4333-b8ce-d270275f4133/images/97909e4beaea0a1ecf60c1511a07e13c7f87e525c448733397e57392b734f653.png",
-};
-
 type Props = {
   event: EventData;
   lang: Lang;
@@ -50,7 +42,7 @@ type Props = {
 
 const EventCard: React.FC<Props> = ({ event, lang, height, onLike, onDislike, onSave }) => {
   const accent = categoryColor(event.category);
-  const img = proxyImage(event.image_url) || FALLBACK_IMAGES[event.category] || FALLBACK_IMAGES.culture;
+  const img = eventImageSource(event.image_url, event.category);
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
@@ -69,6 +61,7 @@ const EventCard: React.FC<Props> = ({ event, lang, height, onLike, onDislike, on
         year: event.year,
         category: event.category,
         lang,
+        wiki_url: event.wiki_url,
       });
       setAiText(data?.text || "");
       if (!data?.text) setAiError(true);
@@ -100,7 +93,7 @@ const EventCard: React.FC<Props> = ({ event, lang, height, onLike, onDislike, on
 
   return (
     <View style={[styles.card, { height }]} testID={`event-card-${event.id}`}>
-      <ImageBackground source={{ uri: img }} style={StyleSheet.absoluteFillObject} resizeMode="cover">
+      <ImageBackground source={img} style={StyleSheet.absoluteFillObject} resizeMode="cover">
         <LinearGradient
           colors={["transparent", "rgba(5,5,5,0.3)", "rgba(5,5,5,0.85)", "#050505"]}
           locations={[0, 0.35, 0.75, 1]}
@@ -223,7 +216,7 @@ const EventCard: React.FC<Props> = ({ event, lang, height, onLike, onDislike, on
         statusBarTranslucent
       >
         <View style={modalStyles.root}>
-          <ImageBackground source={{ uri: img }} style={modalStyles.heroImg} resizeMode="cover">
+          <ImageBackground source={img} style={modalStyles.heroImg} resizeMode="cover">
             <LinearGradient
               colors={["rgba(5,5,5,0.4)", "rgba(5,5,5,0.7)", "#050505"]}
               style={StyleSheet.absoluteFillObject}

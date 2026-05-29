@@ -1,0 +1,50 @@
+# Render Blueprint — deploys the backend API + the static web app.
+# Auto-deploys on every push to the connected branch (continuous updates).
+# Docs: https://render.com/docs/blueprint-spec
+services:
+  # ---------------- Backend API (FastAPI) ----------------
+  - type: web
+    name: accadde-oggi-api
+    runtime: python
+    plan: free
+    region: frankfurt
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/events/categories
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      - key: MONGO_URL          # set in Render dashboard (MongoDB Atlas connection string)
+        sync: false
+      - key: DB_NAME
+        value: accadde_oggi
+      - key: JWT_SECRET
+        generateValue: true     # Render generates a strong secret
+      - key: ADMIN_EMAIL
+        value: admin@accaddeoggi.app
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: TEST_USER_EMAIL
+        value: demo@accaddeoggi.app
+      - key: TEST_USER_PASSWORD
+        sync: false
+      - key: GROQ_API_KEY       # optional; leave unset to use Wikipedia extracts
+        sync: false
+
+  # ---------------- Web app (Expo static export) ----------------
+  - type: web
+    name: accadde-oggi-web
+    runtime: static
+    rootDir: frontend
+    buildCommand: yarn install --frozen-lockfile && npx expo export -p web
+    staticPublishPath: dist
+    envVars:
+      # Matches the API service public URL (Render derives it from the service name).
+      # If you rename the API service, update this value to match.
+      - key: EXPO_PUBLIC_BACKEND_URL
+        value: https://accadde-oggi-api.onrender.com
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
