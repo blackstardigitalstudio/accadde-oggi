@@ -12,12 +12,17 @@
       "supportsTablet": true,
       "bundleIdentifier": "app.accaddeoggi.mobile",
       "infoPlist": {
-        "UIBackgroundModes": ["remote-notification"]
+        "UIBackgroundModes": [
+          "remote-notification"
+        ]
       }
     },
     "android": {
       "package": "app.accaddeoggi.mobile",
-      "permissions": ["NOTIFICATIONS", "SCHEDULE_EXACT_ALARM"],
+      "permissions": [
+        "NOTIFICATIONS",
+        "SCHEDULE_EXACT_ALARM"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#050505"
@@ -51,6 +56,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "070b3738-5f0b-4361-ad02-5e527c8fa822"
+      }
+    },
+    "owner": "blackstark"
   }
 }
