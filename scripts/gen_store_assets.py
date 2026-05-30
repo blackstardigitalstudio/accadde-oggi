@@ -73,4 +73,37 @@ d.text((ax + aw - 6, ay), "O", font=fm, fill=RED)
 tricolor(d, S // 2 - 60, S - 96, 120, 26)
 ic.save(os.path.join(OUT, "store_icon.png"))
 print("wrote store_icon.png", ic.size)
+
+
+def draw_ao(img, size, fontsize, y_off=0):
+    d = ImageDraw.Draw(img)
+    fm = font(fontsize)
+    a_bbox = d.textbbox((0, 0), "A", font=fm)
+    o_bbox = d.textbbox((0, 0), "O", font=fm)
+    aw = a_bbox[2] - a_bbox[0]
+    ow = o_bbox[2] - o_bbox[0]
+    total = aw + ow - int(fontsize * 0.02)
+    th = a_bbox[3] - a_bbox[1]
+    ax = (size - total) // 2 - a_bbox[0]
+    ay = (size - th) // 2 - a_bbox[1] + y_off
+    d.text((ax, ay), "A", font=fm, fill=WHITE)
+    d.text((ax + aw - int(fontsize * 0.02), ay), "O", font=fm, fill=RED)
+    return d
+
+# ---------- App icon 1024 (full bleed, for icon.png) ----------
+S2 = 1024
+appic = glow_bg(S2, S2, S2 // 2, int(S2 * 0.42), r=int(S2 * 0.5))
+draw_ao(appic, S2, 600, y_off=-40)
+da = ImageDraw.Draw(appic)
+tricolor(da, S2 // 2 - 120, S2 - 200, 240, 52)
+appic.save(os.path.join(OUT, "app_icon_1024.png"))
+print("wrote app_icon_1024.png", appic.size)
+
+# ---------- Adaptive foreground 1024 (transparent, safe-zone centered) ----------
+fg2 = Image.new("RGBA", (1024, 1024), (0, 0, 0, 0))
+draw_ao(fg2, 1024, 430, y_off=-30)
+df = ImageDraw.Draw(fg2)
+tricolor(df, 1024 // 2 - 90, 1024 // 2 + 170, 180, 40)
+fg2.save(os.path.join(OUT, "adaptive_fg_1024.png"))
+print("wrote adaptive_fg_1024.png", fg2.size)
 print("done")
