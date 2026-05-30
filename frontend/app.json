@@ -13,6 +13,7 @@
       "bundleIdentifier": "app.accaddeoggi.mobile",
       "infoPlist": {
         "UIBackgroundModes": [
+          "remote-notification",
           "remote-notification"
         ]
       }
@@ -20,6 +21,8 @@
     "android": {
       "package": "app.accaddeoggi.mobile",
       "permissions": [
+        "NOTIFICATIONS",
+        "SCHEDULE_EXACT_ALARM",
         "NOTIFICATIONS",
         "SCHEDULE_EXACT_ALARM"
       ],
@@ -63,6 +66,12 @@
         "projectId": "070b3738-5f0b-4361-ad02-5e527c8fa822"
       }
     },
-    "owner": "blackstark"
+    "owner": "blackstark",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/070b3738-5f0b-4361-ad02-5e527c8fa822"
+    }
   }
 }
