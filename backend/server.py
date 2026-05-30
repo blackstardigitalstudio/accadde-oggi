@@ -377,14 +377,22 @@ def _wikibase_id(raw: dict) -> Optional[str]:
 
 
 def _extract_image(raw: dict) -> Optional[str]:
-    """Extract best image URL and upgrade thumbnail size for full-screen display."""
+    """Extract best image URL and upgrade thumbnail size for full-screen display.
+
+    Scans ALL pages in the onthisday event (not just pages[0]) and returns the
+    first available image, preferring the full-resolution originalimage over the
+    thumbnail and skipping tiny icon thumbnails (width < 100px).
+    """
     url = None
     for p in (raw.get("pages") or []):
-        if p.get("thumbnail", {}).get("source"):
-            url = p["thumbnail"]["source"]
+        orig = (p.get("originalimage") or {}).get("source")
+        if orig:
+            url = orig
             break
-        if p.get("originalimage", {}).get("source"):
-            url = p["originalimage"]["source"]
+        thumb = p.get("thumbnail") or {}
+        thumb_src = thumb.get("source")
+        if thumb_src and (thumb.get("width") or 9999) >= 100:
+            url = thumb_src
             break
     if not url:
         return None
@@ -393,6 +401,41 @@ def _extract_image(raw: dict) -> Optional[str]:
     import re
     url = re.sub(r"/\d{2,4}px-", "/1080px-", url)
     return url
+
+
+async def _fetch_pageimage(lang: str, title: str) -> Optional[str]:
+    """Fallback lead image via the Action API pageimages prop. Free, no API key.
+
+    Used only for events whose inline onthisday pages carried no usable image.
+    Returns the best image URL (upgraded to ~1080px) or None on any error.
+    """
+    if not title:
+        return None
+    ua = "AccaddeOggi/1.0 (https://accaddeoggi.app; contact@accaddeoggi.app)"
+    url = f"https://{lang}.wikipedia.org/w/api.php"
+    params = {
+        "action": "query", "format": "json", "formatversion": "2",
+        "prop": "pageimages", "piprop": "original|thumbnail", "pithumbsize": "1080",
+        "redirects": "1", "titles": title,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as hc:
+            r = await hc.get(url, params=params,
+                             headers={"User-Agent": ua, "Api-User-Agent": ua, "Accept": "application/json"})
+            if r.status_code != 200:
+                return None
+            pages = (r.json().get("query", {}) or {}).get("pages", []) or []
+            if not pages:
+                return None
+            p = pages[0]
+            src = (p.get("thumbnail") or {}).get("source") or (p.get("original") or {}).get("source")
+            if not src:
+                return None
+            import re
+            return re.sub(r"/\d{2,4}px-", "/1080px-", src)
+    except Exception as e:
+        logger.warning(f"Wiki pageimage error ({lang}/{title}): {e}")
+        return None
 
 
 def _wiki_url(raw: dict) -> Optional[str]:
@@ -480,7 +523,7 @@ async def get_merged_events(month: int, day: int, primary_lang: str) -> List[dic
         stable_id = f"evt-{key[0]}-{abs(hash(str(key))) % 10000000}"
         years_ago = current_year - int(key[0])
 
-        final.append({
+        entry = {
             "id": stable_id,
             "year": int(key[0]),
             "years_ago": years_ago,
@@ -495,7 +538,34 @@ async def get_merged_events(month: int, day: int, primary_lang: str) -> List[dic
             "origin": origin,        # primary country affiliation
             "month": month,
             "day": day,
-        })
+        }
+
+        # For image-less events only, remember the best (lang, title) to look up.
+        if not entry["image_url"]:
+            for ul in ("it", "en", "es"):
+                chosen = per_lang.get(ul)
+                if not chosen:
+                    continue
+                pgs = chosen.get("pages") or []
+                pg_title = (pgs[0].get("normalizedtitle") or pgs[0].get("title")) if pgs else None
+                if pg_title:
+                    entry["_img_fallback"] = (ul, pg_title)
+                    break
+
+        final.append(entry)
+
+    # Second-tier image fallback: for events whose inline onthisday pages had no
+    # usable image, query the Action API pageimages (free, no key) concurrently.
+    image_less = [e for e in final if not e.get("image_url") and e.get("_img_fallback")]
+    if image_less:
+        fetched = await asyncio.gather(
+            *[_fetch_pageimage(e["_img_fallback"][0], e["_img_fallback"][1]) for e in image_less]
+        )
+        for e, src in zip(image_less, fetched):
+            if src:
+                e["image_url"] = src
+    for e in final:
+        e.pop("_img_fallback", None)
 
     # Cache
     await db.events_cache.update_one(
