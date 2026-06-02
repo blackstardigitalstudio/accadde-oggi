@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert, Modal, TextInput, ActivityIndicator,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert, Modal, TextInput, ActivityIndicator, Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { LogOut, Heart, Bookmark, ThumbsDown, ChevronRight, Bell, Sun, Moon, Shield, X } from "lucide-react-native";
+import { LogOut, Heart, Bookmark, ThumbsDown, ChevronRight, Bell, Sun, Moon, Shield, X, Coffee } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { useAuth } from "../../src/contexts/AuthContext";
 import { useTheme } from "../../src/contexts/ThemeContext";
@@ -18,6 +18,8 @@ import MadeInItaly from "../../src/components/MadeInItaly";
 import {
   scheduleRandomDailyNotifications, cancelAllNotifications, getScheduledInfo, sendPreviewNotification, Window,
 } from "../../src/services/notifications";
+
+const PAYPAL_URL = "https://paypal.me/cipollino66";
 
 type Stats = {
   likes: number;
@@ -475,6 +477,15 @@ export default function Profile() {
           <Text style={styles.aboutText}>{t(lang, "aboutText")}</Text>
         </View>
 
+        <View style={styles.section}>
+          <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>{t(lang, "support").toUpperCase()}</Text>
+          <Text style={[styles.interestsHint, { color: colors.textMuted }]}>{t(lang, "supportHint")}</Text>
+          <TouchableOpacity style={styles.coffeeBtn} onPress={() => Linking.openURL(PAYPAL_URL)} testID="buy-coffee">
+            <Coffee size={16} color="#050505" strokeWidth={2.5} />
+            <Text style={styles.coffeeText}>{t(lang, "buyCoffee").toUpperCase()}</Text>
+          </TouchableOpacity>
+        </View>
+
         <TouchableOpacity style={styles.logoutBtn} onPress={doLogout} testID="logout-button">
           <LogOut color={COLORS.like} size={18} strokeWidth={2.5} />
           <Text style={styles.logoutText}>{t(lang, "logout").toUpperCase()}</Text>
@@ -680,6 +691,11 @@ const styles = StyleSheet.create({
   countryOptActive: { backgroundColor: COLORS.like, borderColor: COLORS.like },
   countryOptText: { color: COLORS.textSecondary, fontSize: 12, fontWeight: "700" },
   aboutText: { color: COLORS.textSecondary, fontSize: 13, lineHeight: 20 },
+  coffeeBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+    marginTop: 14, paddingVertical: 14, borderRadius: 10, backgroundColor: "#FCA311",
+  },
+  coffeeText: { color: "#050505", fontSize: 13, fontWeight: "900", letterSpacing: 1.8 },
   hourPickerBox: { marginTop: 10, marginBottom: 6 },
   hourLabel: { color: COLORS.textMuted, fontSize: 10, letterSpacing: 2, fontWeight: "800", marginBottom: 10 },
   hourChip: {
