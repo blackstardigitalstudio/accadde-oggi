@@ -10,7 +10,7 @@ import { useTheme } from "../../src/contexts/ThemeContext";
 import api from "../../src/api/client";
 import EventCard, { EventData } from "../../src/components/EventCard";
 import { COLORS } from "../../src/theme";
-import { t, T } from "../../src/i18n/translations";
+import { t, T, Lang } from "../../src/i18n/translations";
 import { countryFlag } from "../../src/i18n/countries";
 
 export default function Feed() {
@@ -28,7 +28,7 @@ export default function Feed() {
   const [err, setErr] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
 
-  const lang = (user?.language as any) || "it";
+  const lang: Lang = (user?.language as Lang) || "it";
 
   const load = useCallback(async () => {
     setErr(null);

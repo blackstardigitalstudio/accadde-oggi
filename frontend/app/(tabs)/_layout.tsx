@@ -37,7 +37,6 @@ export default function TabsLayout() {
         options={{
           title: t(lang, "feed").toUpperCase(),
           tabBarIcon: ({ color }) => <Home color={color} size={22} strokeWidth={2.2} />,
-          tabBarTestID: "tab-feed",
         }}
       />
       <Tabs.Screen
@@ -45,7 +44,6 @@ export default function TabsLayout() {
         options={{
           title: t(lang, "explore").toUpperCase(),
           tabBarIcon: ({ color }) => <Compass color={color} size={22} strokeWidth={2.2} />,
-          tabBarTestID: "tab-explore",
         }}
       />
       <Tabs.Screen
@@ -53,7 +51,6 @@ export default function TabsLayout() {
         options={{
           title: t(lang, "favorites").toUpperCase(),
           tabBarIcon: ({ color }) => <Heart color={color} size={22} strokeWidth={2.2} />,
-          tabBarTestID: "tab-favorites",
         }}
       />
       <Tabs.Screen
@@ -61,7 +58,6 @@ export default function TabsLayout() {
         options={{
           title: t(lang, "profile").toUpperCase(),
           tabBarIcon: ({ color }) => <User color={color} size={22} strokeWidth={2.2} />,
-          tabBarTestID: "tab-profile",
         }}
       />
     </Tabs>
