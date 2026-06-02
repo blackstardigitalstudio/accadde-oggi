@@ -12,15 +12,15 @@ export default function Privacy() {
         <Text style={styles.muted}>Ultimo aggiornamento: {UPDATED}</Text>
 
         <Text style={styles.p}>
-          Questa informativa descrive come l'app "Accadde Oggi" (di seguito "l'App") tratta
-          i dati personali degli utenti. L'App mostra eventi storici quotidiani e offre
+          Questa informativa descrive come l’app “Accadde Oggi” (di seguito “l’App”) tratta
+          i dati personali degli utenti. L’App mostra eventi storici quotidiani e offre
           funzioni di personalizzazione.
         </Text>
 
         <Text style={styles.h2}>1. Dati che raccogliamo</Text>
         <Text style={styles.p}>
           • Dati di registrazione: indirizzo email, nome, lingua e paese.{"\n"}
-          • Preferenze d'uso: interessi selezionati, "mi piace"/"non mi piace" e contenuti salvati.{"\n"}
+          • Preferenze d’uso: interessi selezionati, “mi piace”/“non mi piace” e contenuti salvati.{"\n"}
           • Dati tecnici minimi necessari al funzionamento (token di autenticazione).
         </Text>
         <Text style={styles.p}>
@@ -29,7 +29,7 @@ export default function Privacy() {
 
         <Text style={styles.h2}>2. Come usiamo i dati</Text>
         <Text style={styles.p}>
-          I dati servono esclusivamente a: creare e gestire l'account, autenticare l'accesso,
+          I dati servono esclusivamente a: creare e gestire l’account, autenticare l’accesso,
           personalizzare il feed di eventi e, se attivate, inviare notifiche. Non vendiamo i
           dati personali a terzi.
         </Text>
@@ -42,13 +42,13 @@ export default function Privacy() {
 
         <Text style={styles.h2}>4. Servizi di terze parti</Text>
         <Text style={styles.p}>
-          I contenuti storici provengono dalle API pubbliche di Wikipedia/Wikimedia. L'App è
-          ospitata su Render. Questi servizi trattano solo i dati tecnici necessari all'erogazione.
+          I contenuti storici provengono dalle API pubbliche di Wikipedia/Wikimedia. L’App è
+          ospitata su Render. Questi servizi trattano solo i dati tecnici necessari all’erogazione.
         </Text>
 
         <Text style={styles.h2}>5. I tuoi diritti</Text>
         <Text style={styles.p}>
-          Puoi richiedere l'accesso, la rettifica o la cancellazione dei tuoi dati e del tuo
+          Puoi richiedere l’accesso, la rettifica o la cancellazione dei tuoi dati e del tuo
           account scrivendoci. Provvederemo nei tempi previsti dalla normativa applicabile.
         </Text>
 
