@@ -1,0 +1,27 @@
+name: keep-warm
+
+# Mantiene "svegli" i backend Render (piano gratuito) durante il closed testing
+# delle 3 app, evitando i cold start da ~50s che i tester vedrebbero aprendo
+# l'app dopo un periodo di inattivita'. Repo pubblico => GitHub Actions gratis
+# e illimitato. Made in Italy.
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render backends to prevent free-tier spin-down
+        run: |
+          urls=(
+            "https://accadde-oggi-api.onrender.com/api/health"
+            "https://lo-sapevi-che-api.onrender.com/api/"
+            "https://ricettario-backend.onrender.com/privacy"
+          )
+          for url in "${urls[@]}"; do
+            echo "Pinging $url"
+            curl -s -o /dev/null -w "  -> HTTP %{http_code} in %{time_total}s\n" --max-time 90 "$url" || echo "  -> failed (ignored)"
+          done
