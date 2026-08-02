@@ -34,6 +34,6 @@ jobs:
           # A sleeping free instance needs a moment to boot before it answers.
           curl -s -m 120 --retry 3 --retry-delay 20 "$API_URL/api/health" || true
           curl -s -m 180 --retry 2 --retry-delay 30 \
-            "$API_URL/api/cron/daily?key=$CRON_SECRET" | head -c 2000
+            -H "X-Cron-Key: $CRON_SECRET" "$API_URL/api/cron/daily" | head -c 2000
           echo
-          curl -s -m 180 "$API_URL/api/cron/push?key=$CRON_SECRET" | head -c 2000
+          curl -s -m 180 -H "X-Cron-Key: $CRON_SECRET" "$API_URL/api/cron/push" | head -c 2000

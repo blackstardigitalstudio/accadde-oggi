@@ -7,6 +7,7 @@ load_dotenv(ROOT_DIR / ".env")
 import os
 import re
 import hashlib
+import hmac
 import logging
 import asyncio
 from datetime import datetime, timezone, timedelta
@@ -15,7 +16,7 @@ from typing import List, Optional, Literal
 import bcrypt
 import jwt
 import httpx
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Query, Header
 from fastapi.responses import Response, StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.middleware.cors import CORSMiddleware
@@ -2108,26 +2109,40 @@ async def _daily_worker():
         await asyncio.sleep(KEEPALIVE_SECONDS)
 
 
-def _require_cron_key(key: str):
+def _require_cron_key(key: Optional[str], header_key: Optional[str]):
+    """Authorise a cron call.
+
+    Prefer the header: anything in a query string ends up in access logs, proxy
+    logs and CI output, so a secret passed that way is a secret written down in
+    several places. The query form stays for convenience but is the fallback.
+    Comparison is constant-time so a wrong key leaks nothing by how long it takes.
+    """
     if not CRON_SECRET:
         raise HTTPException(status_code=503, detail="CRON_SECRET not configured")
-    if key != CRON_SECRET:
+    supplied = header_key or key or ""
+    if not hmac.compare_digest(supplied, CRON_SECRET):
         raise HTTPException(status_code=403, detail="Invalid key")
 
 
 @api.get("/cron/daily")
-async def cron_daily(key: str = Query(...)):
+async def cron_daily(
+    key: Optional[str] = Query(None),
+    x_cron_key: Optional[str] = Header(None),
+):
     """External daily trigger (GitHub Actions). Also wakes a sleeping instance."""
-    _require_cron_key(key)
+    _require_cron_key(key, x_cron_key)
     counts = await refresh_upcoming_days()
     purged = await purge_stale_cache()
     return {"ok": True, "refreshed": counts, "purged": purged}
 
 
 @api.get("/cron/push")
-async def cron_push(key: str = Query(...)):
+async def cron_push(
+    key: Optional[str] = Query(None),
+    x_cron_key: Optional[str] = Header(None),
+):
     """External trigger for the daily push round."""
-    _require_cron_key(key)
+    _require_cron_key(key, x_cron_key)
     return await send_daily_push()
 
 
