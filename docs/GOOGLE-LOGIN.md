@@ -79,33 +79,29 @@ Scegli il profilo `production`, poi *Keystore: Manage everything...* → mostra 
 
 ---
 
-## Passo 4 — Incolla i tesserini (2 posti)
+## Passo 4 — Incolla i tesserini (un posto solo)
 
-### Backend (Render)
-Dashboard Render → servizio `accadde-oggi-api` → **Environment** → aggiungi:
-
-```
-GOOGLE_CLIENT_IDS = <ID_WEB>,<ID_ANDROID>,<ID_IOS>
-```
-
-Tutti separati da virgola, senza spazi. Sono gli ID che il backend accetta: uno
-non elencato viene rifiutato, ed è esattamente quello che vogliamo.
-
-### App (Render statico + build EAS)
-Dashboard Render → servizio `accadde-oggi-web` → **Environment**:
+Dashboard Render → servizio `accadde-oggi-api` → **Environment** → aggiungi
+queste tre righe e salva:
 
 ```
-EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID = <ID_WEB>
+GOOGLE_WEB_CLIENT_ID     = <ID_WEB>
+GOOGLE_ANDROID_CLIENT_ID = <ID_ANDROID>
+GOOGLE_IOS_CLIENT_ID     = <ID_IOS>
 ```
 
-Per le app native, nel file `frontend/eas.json`, dentro `build.production.env`
-(e `preview.env` se vuoi provarlo prima):
+**Basta questo. Non serve ricompilare l'app né ripubblicarla sul Play Store.**
 
-```json
-"EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "<ID_WEB>",
-"EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "<ID_ANDROID>",
-"EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "<ID_IOS>"
-```
+L'app chiede al server quali tesserini usare ogni volta che si apre la schermata
+di accesso: appena Render riparte con queste variabili, il bottone "Continua con
+Google" compare da solo su tutti i telefoni che hanno già l'app installata.
+
+> Perché si può fare: un *client ID* non è una password, è un numero di targa —
+> viaggia in chiaro in ogni richiesta che il browser manda a Google. Quello che
+> protegge davvero l'account è la verifica del token, che avviene sul server.
+>
+> Se hai un secondo ID Android per Play App Signing, aggiungilo in
+> `GOOGLE_CLIENT_IDS` (separati da virgola): sono gli ID che il server accetta.
 
 ---
 

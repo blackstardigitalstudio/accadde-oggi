@@ -35,7 +35,15 @@ services:
         value: https://accadde-oggi-api.onrender.com
       - key: CRON_SECRET        # protects /api/cron/* — copy it into the GitHub secret
         generateValue: true
-      - key: GOOGLE_CLIENT_IDS  # comma separated Google OAuth client IDs (web,android,ios)
+      # Google sign-in. Set these and the published app starts offering the
+      # Google button — no rebuild, no new store review.
+      - key: GOOGLE_WEB_CLIENT_ID
+        sync: false
+      - key: GOOGLE_ANDROID_CLIENT_ID
+        sync: false
+      - key: GOOGLE_IOS_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_IDS   # extra accepted audiences (e.g. Play App Signing)
         sync: false
       - key: FAME_MIN          # min. Wikipedia editions for a person to earn a card
         value: "30"

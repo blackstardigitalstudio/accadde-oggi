@@ -16,13 +16,16 @@ import { COUNTRIES, defaultCountryForLang } from "../../src/i18n/countries";
 import { SECURITY_QUESTIONS, SECURITY_LABELS } from "../../src/i18n/security";
 import { HERO_IMAGES } from "../../src/utils/categoryImages";
 import MadeInItaly from "../../src/components/MadeInItaly";
-import GoogleSignInButton, { GOOGLE_ENABLED, googleDividerStyles } from "../../src/components/GoogleSignInButton";
+import GoogleSignInButton, { useGoogleConfig, googleDividerStyles } from "../../src/components/GoogleSignInButton";
 import { t } from "../../src/i18n/translations";
 
 export default function Register() {
   const router = useRouter();
   const { register } = useAuth();
   const { lang: ctxLang, setLang: setCtxLang } = useLang();
+  // Client IDs come from the backend, so this build can start offering Google
+  // sign-in the day it is configured there — without a new release.
+  const googleConfig = useGoogleConfig();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -119,10 +122,11 @@ export default function Register() {
 
             <View style={styles.form}>
               {/* An account in one tap — no form to fill, nothing to remember. */}
-              {GOOGLE_ENABLED && (
+              {googleConfig && (
                 <>
                   <GoogleSignInButton
                     lang={language}
+                    config={googleConfig}
                     country={country}
                     onSuccess={() => router.replace("/(tabs)")}
                     onError={setErr}
@@ -138,7 +142,7 @@ export default function Register() {
                 </>
               )}
 
-              <Text style={[styles.label, GOOGLE_ENABLED && { marginTop: 20 }]}>{T[language].name.toUpperCase()}</Text>
+              <Text style={[styles.label, !!googleConfig && { marginTop: 20 }]}>{T[language].name.toUpperCase()}</Text>
               <TextInput
                 testID="register-name-input"
                 value={name}

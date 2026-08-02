@@ -5,24 +5,65 @@ import * as Google from "expo-auth-session/providers/google";
 import { useAuth } from "../contexts/AuthContext";
 import { Lang, t } from "../i18n/translations";
 import { COLORS } from "../theme";
+import api from "../api/client";
 
 // Required so the browser tab that Google opens can hand the result back.
 WebBrowser.maybeCompleteAuthSession();
 
-const WEB_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
-const ANDROID_ID = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
-const IOS_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
+// Build-time IDs are only a fallback. The real source is the server (below):
+// an OAuth client ID is public by design, and serving it means a build already
+// on the store can gain Google sign-in without being rebuilt.
+const ENV_WEB_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+const ENV_ANDROID_ID = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
+const ENV_IOS_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
+
+export type GoogleConfig = {
+  webClientId?: string;
+  androidClientId?: string;
+  iosClientId?: string;
+};
 
 /**
- * Whether Google sign-in is configured for this build.
+ * Ask the backend which Google client IDs to use.
  *
- * Without client IDs the button is not rendered at all — a button that always
- * fails is worse than no button.
+ * Returns undefined while loading and null when Google sign-in is not
+ * configured, so the caller can render nothing rather than a button that fails.
  */
-export const GOOGLE_ENABLED = Boolean(WEB_ID || ANDROID_ID || IOS_ID);
+export function useGoogleConfig(): GoogleConfig | null | undefined {
+  const [config, setConfig] = useState<GoogleConfig | null | undefined>(undefined);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const { data } = await api.get("/auth/google/config", { timeout: 12000 });
+        if (!alive) return;
+        const cfg: GoogleConfig = {
+          webClientId: data?.web_client_id || ENV_WEB_ID,
+          androidClientId: data?.android_client_id || ENV_ANDROID_ID,
+          iosClientId: data?.ios_client_id || ENV_IOS_ID,
+        };
+        setConfig(cfg.webClientId || cfg.androidClientId || cfg.iosClientId ? cfg : null);
+      } catch {
+        if (!alive) return;
+        // Server unreachable: fall back to whatever was compiled in, if anything.
+        const cfg: GoogleConfig = {
+          webClientId: ENV_WEB_ID,
+          androidClientId: ENV_ANDROID_ID,
+          iosClientId: ENV_IOS_ID,
+        };
+        setConfig(cfg.webClientId || cfg.androidClientId || cfg.iosClientId ? cfg : null);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  return config;
+}
 
 type Props = {
   lang: Lang;
+  config: GoogleConfig;
   country?: string;
   onSuccess: (created: boolean) => void;
   onError: (message: string) => void;
@@ -30,15 +71,15 @@ type Props = {
 };
 
 export default function GoogleSignInButton({
-  lang, country = "IT", onSuccess, onError, disabled,
+  lang, config, country = "IT", onSuccess, onError, disabled,
 }: Props) {
   const { loginWithGoogle } = useAuth();
   const [busy, setBusy] = useState(false);
 
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
-    webClientId: WEB_ID,
-    androidClientId: ANDROID_ID,
-    iosClientId: IOS_ID,
+    webClientId: config.webClientId,
+    androidClientId: config.androidClientId,
+    iosClientId: config.iosClientId,
   });
 
   useEffect(() => {

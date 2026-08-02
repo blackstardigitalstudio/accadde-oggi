@@ -47,9 +47,24 @@ CRON_SECRET = os.environ.get("CRON_SECRET", "")
 # Public URL of this service — used for the keep-alive ping that stops the free
 # Render instance from going to sleep (and cold-starting on the user).
 SELF_URL = os.environ.get("SELF_URL", "").rstrip("/")
-# Accepted Google OAuth client IDs (comma separated: web, android, ios).
+# Google OAuth client IDs, one per platform.
+#
+# These are handed to the app at runtime rather than compiled into it: an OAuth
+# client ID is public by design (it travels in every authorisation URL), and
+# serving it means the published build starts offering Google sign-in the moment
+# these are filled in — no new build, no new store review.
+GOOGLE_WEB_CLIENT_ID = os.environ.get("GOOGLE_WEB_CLIENT_ID", "").strip()
+GOOGLE_ANDROID_CLIENT_ID = os.environ.get("GOOGLE_ANDROID_CLIENT_ID", "").strip()
+GOOGLE_IOS_CLIENT_ID = os.environ.get("GOOGLE_IOS_CLIENT_ID", "").strip()
+
+# Every audience we accept on an incoming token: the three above, plus anything
+# extra listed in GOOGLE_CLIENT_IDS (a second Android client for Play App
+# Signing, for instance).
 GOOGLE_CLIENT_IDS = [
-    c.strip() for c in os.environ.get("GOOGLE_CLIENT_IDS", "").split(",") if c.strip()
+    c for c in (
+        [GOOGLE_WEB_CLIENT_ID, GOOGLE_ANDROID_CLIENT_ID, GOOGLE_IOS_CLIENT_ID]
+        + [c.strip() for c in os.environ.get("GOOGLE_CLIENT_IDS", "").split(",")]
+    ) if c and c.strip()
 ]
 
 client = AsyncIOMotorClient(MONGO_URL)
@@ -1097,6 +1112,25 @@ async def auth_google(body: GoogleAuthBody):
 async def auth_google_status():
     """Lets the app show or hide the Google button without shipping a rebuild."""
     return {"enabled": bool(GOOGLE_CLIENT_IDS)}
+
+
+@api.get("/auth/google/config")
+async def auth_google_config():
+    """Client IDs the app needs to start a Google sign-in.
+
+    Public on purpose: an OAuth client ID is not a secret — it appears in every
+    authorisation URL the browser sees. What protects the account is the token
+    verification in /auth/google, which happens here on the server.
+
+    Serving these instead of compiling them in is what lets an app already on the
+    store gain Google sign-in the day these are configured.
+    """
+    return {
+        "enabled": bool(GOOGLE_WEB_CLIENT_ID or GOOGLE_ANDROID_CLIENT_ID or GOOGLE_IOS_CLIENT_ID),
+        "web_client_id": GOOGLE_WEB_CLIENT_ID or None,
+        "android_client_id": GOOGLE_ANDROID_CLIENT_ID or None,
+        "ios_client_id": GOOGLE_IOS_CLIENT_ID or None,
+    }
 
 
 @api.post("/auth/refresh")
