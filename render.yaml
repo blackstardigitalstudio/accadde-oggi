@@ -37,6 +37,8 @@ services:
         generateValue: true
       - key: GOOGLE_CLIENT_IDS  # comma separated Google OAuth client IDs (web,android,ios)
         sync: false
+      - key: FAME_MIN          # min. Wikipedia editions for a person to earn a card
+        value: "30"
 
   # ---------------- Web app (Expo static export) ----------------
   - type: web

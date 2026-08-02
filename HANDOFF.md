@@ -45,15 +45,20 @@ Lavorato nella copia `D:\accadde oggi\...` (che prima non aveva remote: aggiunto
 `origin` e riportato tutto sopra `origin/main`, così il tasto PayPal, i fix
 TypeScript e `keep-warm.yml` sono rimasti intatti).
 
-- **Contenuti ×12**: dal feed Wikipedia `events` al feed `all` → arrivano anche
-  nati, morti ed eventi in evidenza. Da ~65 a ~770 voci unificate al giorno.
-  Nuovo campo `kind` (event/birth/death) e `extract` (estratto reale dell'articolo,
-  mostrato come "Approfondimento", senza AI).
-- **Limite lingua da sapere**: it.wikipedia non pubblica nati/morti, quindi quelle
-  schede hanno testo spagnolo o inglese. Il feed mette prima i contenuti in
-  italiano, la scheda dichiara la lingua d'origine e le notifiche usano SOLO
-  contenuti nella lingua dell'utente. Per averli in italiano servirebbe risolvere
-  i sitelink via Wikidata: non fatto, è un lavoro a parte.
+- **Contenuti**: dal feed Wikipedia `events` al feed `all` → arrivano anche nati,
+  morti ed eventi in evidenza. 772 voci grezze, poi **selezionate**: restano ~133
+  eventi + ~105 personaggi noti. Nuovo campo `kind` (event/birth/death) e
+  `extract` (estratto reale dell'articolo, mostrato come "Approfondimento").
+- **Selezione dei personaggi** (`curate_people`): Wikipedia elenca ogni persona
+  nata quel giorno, centinaia, quasi tutte sconosciute. Wikidata ci dice in quante
+  edizioni compare ciascuno: sotto `FAME_MIN` (30) si scarta. 639 → 105.
+  La stessa chiamata dà il titolo dell'articolo **italiano**, che viene poi
+  scaricato: tutti e 105 i personaggi hanno testo italiano vero.
+  **Fallisce in sicurezza**: se Wikidata non risponde si tiene tutto, non si
+  cancella nulla.
+- Ordine importante: si seleziona *prima*, si cercano le immagini *dopo* — solo
+  sui sopravvissuti. Invertito, il fallback immagini faceva scattare il 429 di
+  Wikimedia e la selezione tornava vuota.
 - **Aggiornamento automatico**: worker interno (refresh giornaliero di oggi +2,
   pulizia cache, giro di push, self-ping su `SELF_URL`) + `/api/cron/daily` e
   `/api/cron/push` protetti da `CRON_SECRET` + `daily-refresh.yml`.

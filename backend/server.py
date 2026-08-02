@@ -549,6 +549,176 @@ def _stable_id(kind: str, year: int, marker: str) -> str:
     return f"evt-{year}-{digest}"
 
 
+# How many Wikipedia editions a person must appear in to earn a card.
+# It is the best free proxy for "would anyone recognise this name?": a household
+# name is in a hundred languages, a promising under-21 footballer is in two.
+# Wikipedia's own daily list is exhaustive, not curated — this is the curation.
+FAME_MIN = int(os.environ.get("FAME_MIN", "30"))
+WIKIDATA_API = "https://www.wikidata.org/w/api.php"
+WIKI_UA = "AccaddeOggi/1.0 (https://accaddeoggi.app; contact@accaddeoggi.app)"
+
+
+async def fetch_fame_and_italian(qids: List[str]) -> dict:
+    """For each Wikidata item: how many Wikipedia editions carry it, and the
+    Italian/Spanish article titles if they exist.
+
+    Batched 50 at a time, so a whole day of people costs a handful of requests.
+    """
+    out: dict = {}
+    if not qids:
+        return out
+    unique = list(dict.fromkeys(qids))  # same person can appear from two editions
+    async with httpx.AsyncClient(timeout=40.0) as hc:
+        for i in range(0, len(unique), 50):
+            batch = unique[i: i + 50]
+            entities = None
+            # Wikimedia throttles bursts. Back off and retry rather than treat a
+            # 429 as "nobody here is famous" — that answer would be a lie.
+            for attempt in range(4):
+                try:
+                    r = await hc.get(
+                        WIKIDATA_API,
+                        params={"action": "wbgetentities", "format": "json",
+                                "ids": "|".join(batch), "props": "sitelinks"},
+                        headers={"User-Agent": WIKI_UA, "Accept": "application/json"},
+                    )
+                except Exception as e:
+                    logger.warning(f"Wikidata batch error: {e}")
+                    await asyncio.sleep(1.5 * (attempt + 1))
+                    continue
+                if r.status_code == 200:
+                    entities = (r.json().get("entities") or {})
+                    break
+                if r.status_code in (429, 503):
+                    wait = float(r.headers.get("Retry-After") or (2 * (attempt + 1)))
+                    logger.info(f"Wikidata throttled us ({r.status_code}); waiting {wait:.0f}s")
+                    await asyncio.sleep(min(wait, 20))
+                    continue
+                # Never swallow this silently: an unnoticed failure here used to
+                # look exactly like "nobody was famous today".
+                logger.warning(f"Wikidata HTTP {r.status_code} on batch {i // 50}: {r.text[:160]}")
+                break
+            if entities is None:
+                continue
+            # Stay a polite neighbour between batches.
+            await asyncio.sleep(0.4)
+            for qid, ent in entities.items():
+                links = ent.get("sitelinks") or {}
+                out[qid] = {
+                    "fame": len(links),
+                    "it": (links.get("itwiki") or {}).get("title"),
+                    "es": (links.get("eswiki") or {}).get("title"),
+                }
+    return out
+
+
+async def fetch_summary(lang: str, title: str) -> Optional[dict]:
+    """Opening summary of one Wikipedia article, in a given language."""
+    if not title:
+        return None
+    from urllib.parse import quote
+    url = f"https://{lang}.wikipedia.org/api/rest_v1/page/summary/{quote(title, safe='')}"
+    try:
+        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as hc:
+            r = await hc.get(url, headers={"User-Agent": WIKI_UA, "Accept": "application/json"})
+            if r.status_code != 200:
+                return None
+            d = r.json()
+    except Exception:
+        return None
+    extract = (d.get("extract") or "").strip().replace("\n", " ")
+    if not extract:
+        return None
+    if len(extract) > EXTRACT_MAX:
+        cut = extract[:EXTRACT_MAX]
+        dot = cut.rfind(". ")
+        extract = cut[: dot + 1] if dot > EXTRACT_MAX * 0.5 else cut.rstrip() + "…"
+    return {
+        "title": d.get("titles", {}).get("normalized") or d.get("title") or title,
+        "extract": extract,
+        "description": (d.get("description") or "").strip(),
+        "url": (d.get("content_urls", {}) or {}).get("desktop", {}).get("page"),
+        "image": (d.get("thumbnail") or {}).get("source"),
+    }
+
+
+async def curate_people(final: List[dict]) -> List[dict]:
+    """Keep the people worth a card, and give them Italian words.
+
+    Two problems solved in one pass, because one Wikidata call answers both:
+      1. Wikipedia lists every single person born on a date — hundreds, mostly
+         unknown. We keep the ones the world actually knows.
+      2. it.wikipedia publishes no births/deaths, so those entries arrived in
+         Spanish or English. For the ones we keep, we go and fetch the real
+         Italian article.
+    """
+    people = [e for e in final if e["kind"] in ("birth", "death")]
+    others = [e for e in final if e["kind"] not in ("birth", "death")]
+    if not people:
+        return final
+
+    with_qid = [e for e in people if e.get("qid")]
+    fame = await fetch_fame_and_italian([e["qid"] for e in with_qid])
+
+    # Fail open. If Wikidata is unreachable we have no idea who is famous, and
+    # "no idea" must never turn into "delete everyone" — that would silently
+    # empty the app on the day their API has a bad hour.
+    if not fame:
+        logger.warning("Wikidata gave nothing back: keeping every person, uncurated")
+        return final
+
+    kept: List[dict] = []
+    for e in with_qid:
+        info = fame.get(e["qid"])
+        if info is None:
+            # This particular item is unknown to us; keep it rather than guess.
+            kept.append(e)
+            continue
+        if info["fame"] < FAME_MIN:
+            continue
+        e["fame"] = info["fame"]
+        e["_it_title"] = info.get("it")
+        e["_es_title"] = info.get("es")
+        kept.append(e)
+
+    # Fill in the Italian (and Spanish) words for the ones we kept.
+    gate = asyncio.Semaphore(6)
+
+    async def _localise(entry: dict):
+        async with gate:
+            for lg in ("it", "es"):
+                # Already native in this language? Nothing to do.
+                if lg in entry["sources"]:
+                    continue
+                title = entry.get(f"_{lg}_title")
+                if not title:
+                    continue
+                summary = await fetch_summary(lg, title)
+                if not summary:
+                    continue
+                lead = summary["description"] or summary["extract"].split(". ")[0]
+                entry["title_by_lang"][lg] = summary["title"]
+                entry["text_by_lang"][lg] = f"{summary['title']}, {lead}".strip(" ,")
+                entry["extract_by_lang"][lg] = summary["extract"]
+                entry["wiki_urls"][lg] = summary["url"]
+                if not entry.get("image_url") and summary.get("image"):
+                    entry["image_url"] = summary["image"]
+                entry.setdefault("native_langs", list(entry["sources"]))
+                entry["native_langs"].append(lg)
+
+    await asyncio.gather(*[_localise(e) for e in kept])
+
+    for e in kept:
+        e.pop("_it_title", None)
+        e.pop("_es_title", None)
+
+    logger.info(
+        f"Curated people: {len(people)} -> {len(kept)} (soglia fama {FAME_MIN}), "
+        f"con testo italiano: {sum(1 for e in kept if 'it' in (e.get('native_langs') or e['sources']))}"
+    )
+    return others + kept
+
+
 async def build_merged_events(month: int, day: int) -> List[dict]:
     """Fetch and merge one calendar day from every Wikipedia edition we support.
 
@@ -576,12 +746,15 @@ async def build_merged_events(month: int, day: int) -> List[dict]:
                 merged[key] = {
                     "kind": kind,
                     "year": int(year),
+                    "qid": wb,
                     "per_lang": {lang: ev},
                     "image_url": _extract_image(ev),
                     "wiki_urls": {lang: _wiki_url(ev)},
                 }
             else:
                 bucket["per_lang"][lang] = ev
+                if not bucket["qid"]:
+                    bucket["qid"] = wb
                 if not bucket["image_url"]:
                     bucket["image_url"] = _extract_image(ev)
                 bucket["wiki_urls"][lang] = _wiki_url(ev)
@@ -633,6 +806,7 @@ async def build_merged_events(month: int, day: int) -> List[dict]:
         entry = {
             "id": _stable_id(kind, year, marker),
             "kind": kind,            # 'event' | 'birth' | 'death'
+            "qid": b.get("qid"),     # Wikidata item — used to rank fame and find the Italian page
             "year": year,
             "years_ago": years_ago,
             "text_by_lang": text_by_lang,
@@ -664,15 +838,18 @@ async def build_merged_events(month: int, day: int) -> List[dict]:
 
         final.append(entry)
 
-    # Second-tier image fallback: for events whose inline onthisday pages had no
-    # usable image, query the Action API pageimages (free, no key).
-    #
-    # A day used to hold ~65 entries; it now holds ~770, so firing one request per
-    # image-less entry all at once would mean well over a hundred simultaneous
-    # hits on wikipedia.org — rate-limited and rude. Run them a few at a time.
+    # Curate BEFORE chasing images. Wikipedia's daily list of people is
+    # exhaustive, not curated: keep the ones anyone would recognise and give them
+    # Italian words. Doing it first also means the image lookups below run for
+    # ~150 survivors instead of ~500 — the burst that was getting us rate-limited.
+    final = await curate_people(final)
+
+    # Second-tier image fallback: for entries whose inline onthisday pages had no
+    # usable image, query the Action API pageimages (free, no key). A few at a
+    # time — Wikimedia throttles bursts, and it is their gift we are spending.
     image_less = [e for e in final if not e.get("image_url") and e.get("_img_fallback")]
     if image_less:
-        gate = asyncio.Semaphore(6)
+        gate = asyncio.Semaphore(4)
 
         async def _lookup(entry: dict):
             async with gate:
@@ -725,6 +902,15 @@ async def get_merged_events(month: int, day: int, primary_lang: str) -> List[dic
     return events
 
 
+def native_langs(ev: dict) -> List[str]:
+    """Languages this entry can be read in natively.
+
+    Starts as the Wikipedia editions that carried it, and grows when the
+    curation step goes and fetches the real Italian article for a person.
+    """
+    return ev.get("native_langs") or ev.get("sources") or []
+
+
 def _pick_lang(mapping: dict, lang: str) -> str:
     for candidate in LANG_FALLBACK.get(lang, ["en"]):
         value = mapping.get(candidate)
@@ -742,14 +928,15 @@ def project_event_for_lang(ev: dict, lang: str) -> dict:
     # Which Wikipedia edition the text actually comes from. it.wikipedia publishes
     # no births/deaths, so those cards fall back to es/en — the card says so
     # rather than passing foreign text off as translated.
-    sources = ev.get("sources") or []
-    text_lang = lang if lang in sources else next(
-        (c for c in LANG_FALLBACK.get(lang, []) if c in sources), lang
+    available = native_langs(ev)
+    text_lang = lang if lang in available else next(
+        (c for c in LANG_FALLBACK.get(lang, []) if c in available), lang
     )
     return {
         "id": ev["id"],
         "kind": ev.get("kind", "event"),
         "text_lang": text_lang,
+        "fame": ev.get("fame"),
         "year": ev["year"],
         "years_ago": ev["years_ago"],
         "title": title,
@@ -1081,7 +1268,7 @@ async def events_today(
             return True
         # If the user's own Wikipedia edition carries the entry, it is relevant to
         # them by definition — and the text is native, not a fallback translation.
-        if user_lang in (ev.get("sources") or []):
+        if user_lang in native_langs(ev):
             return True
         # If origin is None and no countries detected, fall back to text availability in user_lang
         if not ev.get("origin") and not ev.get("countries"):
@@ -1096,7 +1283,7 @@ async def events_today(
         if ev.get("image_url"):
             s += 5
         # Content the user can read in their own language comes first.
-        if user_lang in (ev.get("sources") or []):
+        if user_lang in native_langs(ev):
             s += 7
         # Events still open the feed; births and deaths fill it out further down.
         if ev.get("kind", "event") == "event":
@@ -1200,7 +1387,7 @@ async def events_teasers(
         if ev.get("image_url"):
             s += 3
         # A notification the user can actually read beats a better story they can't.
-        if user_lang in (ev.get("sources") or []):
+        if user_lang in native_langs(ev):
             s += 8
         # Prefer round-number anniversaries for notifications (hook!)
         for m2 in (10, 20, 25, 50, 75, 100, 150, 200, 500, 1000):
@@ -1222,8 +1409,8 @@ async def events_teasers(
     # language. Native entries are exhausted first and only then topped up from the
     # other editions — ranking alone let a round anniversary in Spanish outrank
     # every Italian story.
-    native = [e for e in pool if user_lang in (e.get("sources") or [])]
-    other = [e for e in pool if user_lang not in (e.get("sources") or [])]
+    native = [e for e in pool if user_lang in native_langs(e)]
+    other = [e for e in pool if user_lang not in native_langs(e)]
     native.sort(key=score)
     other.sort(key=score)
     pool = (native + other)[:count]
@@ -1624,48 +1811,97 @@ EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
 PUSH_CHANNEL = "accadde-daily"
 
 KIND_ICON = {"event": "📜", "birth": "🎂", "death": "🕯️"}
+CATEGORY_ICON = {"wars": "⚔️", "science": "🔬", "culture": "🎭", "sports": "🏆", "politics": "🏛️"}
 
-# Hooks open on the curiosity gap, never on what the app does.
-PUSH_HOOKS = {
-    "it": {
-        "event": "Sai cosa accadde oggi nel {year}?",
-        "birth": "Oggi nel {year} nasceva qualcuno che conosci",
-        "death": "Oggi nel {year} il mondo lo salutava",
-        "anniversary": "{years} anni fa, oggi",
-        "tap": "Aprilo: 30 secondi e lo sai.",
-    },
-    "en": {
-        "event": "Do you know what happened today in {year}?",
-        "birth": "Someone you know was born today in {year}",
-        "death": "Today in {year} the world said goodbye",
-        "anniversary": "{years} years ago, today",
-        "tap": "Open it: 30 seconds and you know.",
-    },
-    "es": {
-        "event": "¿Sabes qué pasó hoy en {year}?",
-        "birth": "Hoy en {year} nacía alguien que conoces",
-        "death": "Hoy en {year} el mundo se despedía",
-        "anniversary": "Hace {years} años, hoy",
-        "tap": "Ábrelo: 30 segundos y lo sabes.",
-    },
+# The brand leads every push: it has to be recognisable before it is read.
+BRAND = {"it": "Accadde Oggi", "en": "On This Day", "es": "Un Día Como Hoy"}
+
+# Round anniversaries spelled out. "Vent'anni fa" reads like a person wrote it,
+# "20 anni fa" reads like a database. Everything else stays as digits.
+SPELLED_YEARS = {
+    "it": {10: "dieci anni", 20: "vent'anni", 25: "venticinque anni", 30: "trent'anni",
+           40: "quarant'anni", 50: "mezzo secolo", 60: "sessant'anni", 70: "settant'anni",
+           75: "settantacinque anni", 80: "ottant'anni", 90: "novant'anni", 100: "cent'anni",
+           150: "centocinquant'anni", 200: "due secoli", 250: "duecentocinquant'anni",
+           500: "cinque secoli", 1000: "mille anni"},
+    "en": {10: "ten years", 20: "twenty years", 25: "twenty-five years", 30: "thirty years",
+           40: "forty years", 50: "half a century", 60: "sixty years", 70: "seventy years",
+           75: "seventy-five years", 80: "eighty years", 90: "ninety years", 100: "a century",
+           150: "a century and a half", 200: "two centuries", 250: "two hundred and fifty years",
+           500: "five centuries", 1000: "a thousand years"},
+    "es": {10: "diez años", 20: "veinte años", 25: "veinticinco años", 30: "treinta años",
+           40: "cuarenta años", 50: "medio siglo", 60: "sesenta años", 70: "setenta años",
+           75: "setenta y cinco años", 80: "ochenta años", 90: "noventa años", 100: "un siglo",
+           150: "siglo y medio", 200: "dos siglos", 250: "doscientos cincuenta años",
+           500: "cinco siglos", 1000: "mil años"},
 }
+
+OPENERS = {
+    "it": {"first": "{years} fa nasceva", "birth": "Nel {year} nasceva", "death": "Nel {year} ci lasciava"},
+    "en": {"first": "{years} ago this was born", "birth": "Born in {year}", "death": "In {year} we lost"},
+    "es": {"first": "Hace {years} nacía", "birth": "En {year} nacía", "death": "En {year} nos dejaba"},
+}
+
+FALLBACK_NUDGE = {
+    "it": "Trenta secondi e lo sai.",
+    "en": "Thirty seconds and you know.",
+    "es": "Treinta segundos y lo sabes.",
+}
+
+ROUND_ANNIVERSARIES = (10, 20, 25, 30, 40, 50, 60, 70, 75, 80, 90, 100, 150, 200, 250, 500, 1000)
+
+# Firsts, inventions and discoveries land differently from ordinary events:
+# "oggi hanno creato la lampadina" is its own kind of hook.
+FIRST_RE = re.compile(
+    r"\bprim[ao]\b|\binvent|\bbrevett|\bscopert|\bnasce\b|\bdebutt"
+    r"|\bfirst\b|\bpatent|\bdiscover|\blaunch|\bdebut"
+    r"|\bprimer[ao]?\b|\bdescubr|\bestren",
+    re.IGNORECASE,
+)
+
+
+def spell_years(lang: str, years: int) -> str:
+    spelled = SPELLED_YEARS.get(lang, {}).get(years)
+    if spelled:
+        return spelled
+    return f"{years} years" if lang == "en" else f"{years} anni"
 
 
 def build_push_content(teaser: dict, lang: str) -> dict:
-    """Title + body for one push, built from a real event."""
-    hooks = PUSH_HOOKS.get(lang, PUSH_HOOKS["en"])
+    """Title + body for one push, built from a real event.
+
+    Shape: "📜 Accadde Oggi · vent'anni fa" / "Il fatto vero, in chiaro."
+    """
     kind = teaser.get("kind", "event")
-    icon = KIND_ICON.get(kind, "📜")
     year = teaser.get("year")
-    years_ago = teaser.get("years_ago")
+    years_ago = teaser.get("years_ago") or 0
+    fact = (teaser.get("text_short") or teaser.get("title") or "").strip()
+    is_first = kind == "event" and bool(FIRST_RE.search(fact))
+    is_round = years_ago in ROUND_ANNIVERSARIES
 
-    is_round = years_ago in (10, 20, 25, 50, 75, 100, 150, 200, 500, 1000)
-    if is_round:
-        title = f"{icon} {hooks['anniversary'].format(years=years_ago)}"
+    icon = "💡" if is_first else "🎯" if is_round else (
+        CATEGORY_ICON.get(teaser.get("category")) or KIND_ICON.get(kind, "📜")
+    )
+    years = spell_years(lang, years_ago)
+    brand = BRAND.get(lang, BRAND["en"])
+
+    # A round anniversary is the occasion, so it always leads — spelled out,
+    # for anyone. Otherwise events show the distance and people show the year.
+    if kind == "event" or is_round:
+        stamp = f"{years} ago" if lang == "en" else (f"hace {years}" if lang == "es" else f"{years} fa")
     else:
-        title = f"{icon} {hooks[kind].format(year=year)}"
+        stamp = str(year)
+    title = f"{icon} {brand} · {stamp}"
 
-    body = teaser.get("text_short") or teaser.get("title") or hooks["tap"]
+    if len(fact) <= 12:
+        body = FALLBACK_NUDGE.get(lang, FALLBACK_NUDGE["en"])
+    elif kind == "event" and not is_first:
+        body = fact
+    else:
+        opener_key = "first" if is_first else kind
+        opener = (OPENERS.get(lang) or OPENERS["en"])[opener_key]
+        body = f"{opener.format(years=years, year=year)} {fact}"
+
     return {"title": title, "body": body}
 
 
@@ -1702,7 +1938,7 @@ def _push_score(ev: dict, country: str, lang: str = "it") -> float:
     s = 0.0
     if ev.get("image_url"):
         s += 3
-    if lang in (ev.get("sources") or []):
+    if lang in native_langs(ev):
         s += 8
     if ev["years_ago"] in (10, 20, 25, 50, 75, 100, 150, 200, 500, 1000):
         s += 10
@@ -1736,8 +1972,8 @@ async def send_daily_push() -> dict:
         key = (lang, country)
         if key not in pools:
             # Same rule as the teasers: readable in the user's language first.
-            native = [e for e in events if lang in (e.get("sources") or [])]
-            rest = [e for e in events if lang not in (e.get("sources") or [])]
+            native = [e for e in events if lang in native_langs(e)]
+            rest = [e for e in events if lang not in native_langs(e)]
             ranked = (
                 sorted(native, key=lambda e: _push_score(e, country, lang))
                 + sorted(rest, key=lambda e: _push_score(e, country, lang))

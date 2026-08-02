@@ -22,8 +22,11 @@ paese e gusti dell'utente. I contenuti arrivano in tempo reale da Wikipedia
 - **Accedi con Google** — opzionale: senza credenziali configurate il bottone non
   compare. Guida passo passo in [docs/GOOGLE-LOGIN.md](docs/GOOGLE-LOGIN.md)
 - Feed multilingua (IT/EN/ES) con eventi globali e locali al paese dell'utente
-- **Eventi, nati e morti del giorno** da tutte e tre le edizioni di Wikipedia:
-  circa **770 voci unificate al giorno** (prima erano una sessantina)
+- **Eventi, nati e morti del giorno** da tutte e tre le edizioni di Wikipedia,
+  **selezionati**: ~130 eventi + ~105 personaggi che il mondo conosce davvero
+  (prima erano una sessantina di voci in tutto)
+- I personaggi passano il filtro solo se compaiono in almeno `FAME_MIN` edizioni
+  di Wikipedia, e per ognuno viene recuperato **l'articolo italiano vero**
 - Like / dislike / preferiti con personalizzazione
 - Filtri per tipo, categoria, decennio e ambito (globale / locale)
 - Notifiche con priorità massima e vibrazione, frequenza scelta dall'utente

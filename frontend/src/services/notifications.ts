@@ -103,95 +103,131 @@ type Content = { title: string; body: string; anniversary: boolean };
 
 const ROUND_ANNIVERSARIES = [10, 20, 25, 50, 75, 100, 150, 200, 250, 500, 1000];
 
-const HOOKS: Record<Lang, {
-  anniversary: (y: number, year: number) => string;
-  event: (year: number) => string[];
-  birth: (year: number) => string[];
-  death: (year: number) => string[];
-  nudge: string[];
-}> = {
+/**
+ * Round anniversaries spelled out in words.
+ *
+ * "Vent'anni fa" reads like a person wrote it; "20 anni fa" reads like a
+ * database. Only the round numbers get this treatment — they are the ones worth
+ * the flourish, and anything else stays as digits.
+ */
+const SPELLED_YEARS: Record<Lang, Record<number, string>> = {
   it: {
-    anniversary: (y, year) => `${y} anni tondi. Oggi, nel ${year}`,
-    event: (year) => [
-      `Oggi nel ${year} successe una cosa`,
-      `Sai cosa accadde oggi nel ${year}?`,
-      `${year}: oggi è l'anniversario`,
-    ],
-    birth: (year) => [
-      `Oggi nel ${year} nasceva qualcuno che conosci`,
-      `Chi è nato oggi, nel ${year}?`,
-    ],
-    death: (year) => [
-      `Oggi nel ${year} il mondo lo salutava`,
-      `Chi ci ha lasciato oggi, nel ${year}?`,
-    ],
-    nudge: ["Trenta secondi e lo sai.", "Quasi nessuno se lo ricorda.", "Apri: dura meno di un caffè."],
+    10: "dieci anni", 20: "vent'anni", 25: "venticinque anni", 30: "trent'anni",
+    40: "quarant'anni", 50: "mezzo secolo", 60: "sessant'anni", 70: "settant'anni",
+    75: "settantacinque anni", 80: "ottant'anni", 90: "novant'anni", 100: "cent'anni",
+    150: "centocinquant'anni", 200: "due secoli", 250: "duecentocinquant'anni",
+    500: "cinque secoli", 1000: "mille anni",
   },
   en: {
-    anniversary: (y, year) => `${y} years exactly. Today, in ${year}`,
-    event: (year) => [
-      `Something happened today in ${year}`,
-      `Do you know what happened today in ${year}?`,
-      `${year}: today is the anniversary`,
-    ],
-    birth: (year) => [
-      `Someone you know was born today in ${year}`,
-      `Who was born today, in ${year}?`,
-    ],
-    death: (year) => [
-      `Today in ${year} the world said goodbye`,
-      `Who did we lose today, in ${year}?`,
-    ],
-    nudge: ["Thirty seconds and you know.", "Almost nobody remembers this.", "Open it: shorter than a coffee."],
+    10: "ten years", 20: "twenty years", 25: "twenty-five years", 30: "thirty years",
+    40: "forty years", 50: "half a century", 60: "sixty years", 70: "seventy years",
+    75: "seventy-five years", 80: "eighty years", 90: "ninety years", 100: "a century",
+    150: "a century and a half", 200: "two centuries", 250: "two hundred and fifty years",
+    500: "five centuries", 1000: "a thousand years",
   },
   es: {
-    anniversary: (y, year) => `${y} años justos. Hoy, en ${year}`,
-    event: (year) => [
-      `Hoy en ${year} pasó algo`,
-      `¿Sabes qué pasó hoy en ${year}?`,
-      `${year}: hoy es el aniversario`,
-    ],
-    birth: (year) => [
-      `Hoy en ${year} nacía alguien que conoces`,
-      `¿Quién nació hoy, en ${year}?`,
-    ],
-    death: (year) => [
-      `Hoy en ${year} el mundo se despedía`,
-      `¿A quién perdimos hoy, en ${year}?`,
-    ],
-    nudge: ["Treinta segundos y lo sabes.", "Casi nadie lo recuerda.", "Ábrelo: dura menos que un café."],
+    10: "diez años", 20: "veinte años", 25: "veinticinco años", 30: "treinta años",
+    40: "cuarenta años", 50: "medio siglo", 60: "sesenta años", 70: "setenta años",
+    75: "setenta y cinco años", 80: "ochenta años", 90: "noventa años", 100: "un siglo",
+    150: "siglo y medio", 200: "dos siglos", 250: "doscientos cincuenta años",
+    500: "cinco siglos", 1000: "mil años",
   },
 };
 
-function pick<T>(arr: T[], seed?: number): T {
-  const i = seed === undefined ? Math.floor(Math.random() * arr.length) : seed % arr.length;
-  return arr[i];
+export function spellYears(lang: Lang, years: number): string {
+  const spelled = SPELLED_YEARS[lang]?.[years];
+  if (spelled) return spelled;
+  return lang === "en" ? `${years} years` : `${years} anni`;
+}
+
+/** The brand always leads: the notification must be recognisable at a glance. */
+const BRAND: Record<Lang, string> = {
+  it: "Accadde Oggi",
+  en: "On This Day",
+  es: "Un Día Como Hoy",
+};
+
+/** How the body opens, per kind of story. */
+const OPENERS: Record<Lang, Record<string, (years: string, year: number) => string>> = {
+  it: {
+    first: (years) => `${years} fa nasceva`,
+    event: (years) => `${years} fa`,
+    birth: (_, year) => `Nel ${year} nasceva`,
+    death: (_, year) => `Nel ${year} ci lasciava`,
+  },
+  en: {
+    first: (years) => `${years} ago this was born`,
+    event: (years) => `${years} ago`,
+    birth: (_, year) => `Born in ${year}`,
+    death: (_, year) => `In ${year} we lost`,
+  },
+  es: {
+    first: (years) => `Hace ${years} nacía`,
+    event: (years) => `Hace ${years}`,
+    birth: (_, year) => `En ${year} nacía`,
+    death: (_, year) => `En ${year} nos dejaba`,
+  },
+};
+
+const FALLBACK_NUDGE: Record<Lang, string> = {
+  it: "Trenta secondi e lo sai.",
+  en: "Thirty seconds and you know.",
+  es: "Treinta segundos y lo sabes.",
+};
+
+/**
+ * Does this entry describe a first, an invention or a discovery?
+ *
+ * "Oggi hanno creato la lampadina" lands very differently from "oggi è
+ * successo un fatto", so those get their own opener and their own icon.
+ */
+const FIRST_PATTERNS = [
+  /\bprim[ao]\b/i, /\binvent/i, /\bbrevett/i, /\bscopert/i, /\bnasce\b/i, /\bdebutt/i,
+  /\bfirst\b/i, /\binvent/i, /\bpatent/i, /\bdiscover/i, /\blaunch/i, /\bdebut/i,
+  /\bprimer[ao]?\b/i, /\bdescubr/i, /\bpatente\b/i, /\bestren/i,
+];
+
+function looksLikeAFirst(text: string): boolean {
+  return FIRST_PATTERNS.some((re) => re.test(text));
 }
 
 /**
  * Build one notification from a real event.
  *
- * The hook always comes first and it is always a question or a gap; the body is
- * the real excerpt. Nothing here describes the app or its features — that never
- * made anyone open anything.
+ * Shape: "📜 Accadde Oggi · vent'anni fa" / "Il fatto vero, in chiaro."
+ * The brand makes it recognisable, the time span makes it feel like an occasion,
+ * and the body is the fact itself — never a description of what the app does.
  */
 function buildContent(lang: Lang, teaser: Teaser, seed: number): Content {
-  const hooks = HOOKS[lang] || HOOKS.en;
   const kind = teaser.kind || "event";
   const isAnniversary = ROUND_ANNIVERSARIES.includes(teaser.years_ago);
-  const icon = isAnniversary
+  const fact = (teaser.text_short || teaser.title_short || teaser.title || "").trim();
+  const isFirst = kind === "event" && looksLikeAFirst(fact);
+
+  const icon = isFirst
+    ? "💡"
+    : isAnniversary
     ? "🎯"
     : CATEGORY_ICON[teaser.category] || KIND_ICON[kind] || "📜";
 
-  const headline = isAnniversary
-    ? hooks.anniversary(teaser.years_ago, teaser.year)
-    : pick(hooks[kind] ? hooks[kind](teaser.year) : hooks.event(teaser.year), seed);
+  const years = spellYears(lang, teaser.years_ago);
+  const brand = BRAND[lang] || BRAND.en;
 
-  const excerpt = teaser.text_short && teaser.text_short.length > 12
-    ? teaser.text_short
-    : teaser.title_short || teaser.title || pick(hooks.nudge, seed);
+  // Title carries the brand and the distance in time — the two things that make
+  // someone stop scrolling. Round anniversaries get the number spelled out.
+  // A round anniversary is the occasion, so it always leads — spelled out, for
+  // anyone. Otherwise events show the distance and people show the year.
+  const stamp = kind === "event" || isAnniversary
+    ? (lang === "en" ? `${years} ago` : lang === "es" ? `hace ${years}` : `${years} fa`)
+    : `${teaser.year}`;
+  const title = `${icon} ${brand} · ${stamp}`;
 
-  return { title: `${icon} ${headline}`, body: excerpt, anniversary: isAnniversary };
+  const opener = (OPENERS[lang] || OPENERS.en)[isFirst ? "first" : kind];
+  const body = fact.length > 12
+    ? (kind === "event" && !isFirst ? fact : `${opener(years, teaser.year)} ${fact}`)
+    : FALLBACK_NUDGE[lang] || FALLBACK_NUDGE.en;
+
+  return { title, body, anniversary: isAnniversary };
 }
 
 // ============================================================
