@@ -33,7 +33,7 @@ export default function Feed() {
   const load = useCallback(async () => {
     setErr(null);
     try {
-      const { data } = await api.get("/events/today", { params: { limit: 40 } });
+      const { data } = await api.get("/events/today", { params: { limit: 120 } });
       setEvents(data.events || []);
     } catch (e: any) {
       setErr(t(lang, "errorFeed"));

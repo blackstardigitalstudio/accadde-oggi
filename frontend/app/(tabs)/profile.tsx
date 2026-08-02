@@ -6,7 +6,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { LogOut, Heart, Bookmark, ThumbsDown, ChevronRight, Bell, Sun, Moon, Shield, X, Coffee } from "lucide-react-native";
 import { useRouter } from "expo-router";
-import { useAuth } from "../../src/contexts/AuthContext";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  useAuth, readNotifPrefs, NOTIF_WINDOW_KEY, NOTIF_INTENSITY_KEY,
+} from "../../src/contexts/AuthContext";
 import { useTheme } from "../../src/contexts/ThemeContext";
 import api from "../../src/api/client";
 import { COLORS, categoryColor } from "../../src/theme";
@@ -16,7 +19,8 @@ import { INTERESTS, subLabel } from "../../src/i18n/interests";
 import { SECURITY_QUESTIONS, SECURITY_LABELS } from "../../src/i18n/security";
 import MadeInItaly from "../../src/components/MadeInItaly";
 import {
-  scheduleRandomDailyNotifications, cancelAllNotifications, getScheduledInfo, sendPreviewNotification, Window,
+  scheduleRandomDailyNotifications, cancelAllNotifications, getScheduledInfo, sendPreviewNotification,
+  Window, Intensity, INTENSITY_PER_DAY, SCHEDULE_DAYS,
 } from "../../src/services/notifications";
 
 const PAYPAL_URL = "https://paypal.me/cipollino66";
@@ -36,6 +40,7 @@ export default function Profile() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [showCountry, setShowCountry] = useState(false);
   const [notifWindow, setNotifWindow] = useState<Window>("random");
+  const [notifIntensity, setNotifIntensity] = useState<Intensity>("normal");
   const [notifInfo, setNotifInfo] = useState<{ count: number; nextDate?: Date; nextTitle?: string; nextBody?: string }>({ count: 0 });
   const [previewSending, setPreviewSending] = useState(false);
   const [secModalOpen, setSecModalOpen] = useState(false);
@@ -60,7 +65,17 @@ export default function Profile() {
     setNotifInfo(info);
   }, []);
 
-  useEffect(() => { loadStats(); loadNotifInfo(); }, [loadStats, loadNotifInfo]);
+  const loadNotifPrefs = useCallback(async () => {
+    const prefs = await readNotifPrefs();
+    setNotifWindow(prefs.window);
+    setNotifIntensity(prefs.intensity);
+  }, []);
+
+  useEffect(() => {
+    loadStats();
+    loadNotifInfo();
+    loadNotifPrefs();
+  }, [loadStats, loadNotifInfo, loadNotifPrefs]);
 
   const doLogout = () => {
     Alert.alert(
@@ -89,10 +104,14 @@ export default function Profile() {
     setShowCountry(false);
   };
 
+  const reschedule = async (w: Window, intensity: Intensity) => {
+    return scheduleRandomDailyNotifications(w, lang, SCHEDULE_DAYS, INTENSITY_PER_DAY[intensity]);
+  };
+
   const toggleNotif = async () => {
     const newState = !user?.notifications_enabled;
     if (newState) {
-      const res = await scheduleRandomDailyNotifications(notifWindow, lang, 14, 3);
+      const res = await reschedule(notifWindow, notifIntensity);
       if (!res.ok) {
       Alert.alert(
         t(lang, "permissionsNeeded"),
@@ -109,8 +128,18 @@ export default function Profile() {
 
   const changeWindow = async (w: Window) => {
     setNotifWindow(w);
+    await AsyncStorage.setItem(NOTIF_WINDOW_KEY, w);
     if (user?.notifications_enabled) {
-      await scheduleRandomDailyNotifications(w, lang, 14, 3);
+      await reschedule(w, notifIntensity);
+      await loadNotifInfo();
+    }
+  };
+
+  const changeIntensity = async (intensity: Intensity) => {
+    setNotifIntensity(intensity);
+    await AsyncStorage.setItem(NOTIF_INTENSITY_KEY, intensity);
+    if (user?.notifications_enabled) {
+      await reschedule(notifWindow, intensity);
       await loadNotifInfo();
     }
   };
@@ -135,7 +164,9 @@ export default function Profile() {
     const selected = SECURITY_QUESTIONS[lang].find((q) => q.id === secQid);
     const qText = secQid === "custom" ? secCustom.trim() : (selected?.label || "");
     const aText = secAnswer.trim();
-    if (!secCurrentPw || !qText || qText.length < 3 || !aText || aText.length < 2) {
+    // Google accounts have no password to confirm — the session itself is the proof.
+    const needsPassword = user?.has_password !== false;
+    if ((needsPassword && !secCurrentPw) || !qText || qText.length < 3 || !aText || aText.length < 2) {
       setSecErr(
         t(lang, "fillAllFields")
       );
@@ -185,6 +216,11 @@ export default function Profile() {
           </View>
           <Text style={[styles.name, { color: colors.textPrimary }]} testID="profile-name">{user?.name || "—"}</Text>
           <Text style={[styles.email, { color: colors.textSecondary }]}>{user?.email}</Text>
+          {user?.auth_provider === "google" && (
+            <Text style={[styles.since, { color: colors.textMuted }]} testID="profile-google-hint">
+              🔑 {t(lang, "googleAccountHint")}
+            </Text>
+          )}
           {user?.created_at && (
             <Text style={[styles.since, { color: colors.textMuted }]}>
               {t(lang, "memberSince")} {new Date(user.created_at).toLocaleDateString()}
@@ -310,7 +346,7 @@ export default function Profile() {
               <Text style={[styles.settingTitle, { color: colors.textPrimary }]}>{t(lang, "notifications").toUpperCase()}</Text>
               <Text style={[styles.settingHint, { color: colors.textMuted }]}>
                 {user?.notifications_enabled
-                  ? `${t(lang, "notifSchedInfo")} · ${notifInfo.count} ${t(lang, "nProgrammate")}`
+                  ? `${t(lang, `intensity${notifIntensity === "soft" ? "Soft" : notifIntensity === "max" ? "Max" : "Normal"}Hint` as any)} · ${notifInfo.count} ${t(lang, "nProgrammate")}`
                   : t(lang, "notificationsDisabled")}
               </Text>
             </View>
@@ -325,7 +361,42 @@ export default function Profile() {
 
           {user?.notifications_enabled && (
             <View style={styles.hourPickerBox}>
-              <Text style={styles.hourLabel}>
+              {/* How many — three tiles, one tap, the number spelled out. */}
+              <Text style={styles.hourLabel}>{t(lang, "notifIntensity")}</Text>
+              <View style={styles.intensityGrid}>
+                {([
+                  { id: "soft" as Intensity, icon: "🌱", label: t(lang, "intensitySoft"), hint: t(lang, "intensitySoftHint") },
+                  { id: "normal" as Intensity, icon: "⚡", label: t(lang, "intensityNormal"), hint: t(lang, "intensityNormalHint") },
+                  { id: "max" as Intensity, icon: "🔥", label: t(lang, "intensityMax"), hint: t(lang, "intensityMaxHint") },
+                ]).map((opt) => {
+                  const active = notifIntensity === opt.id;
+                  return (
+                    <TouchableOpacity
+                      key={opt.id}
+                      testID={`notif-intensity-${opt.id}`}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
+                      accessibilityLabel={`${opt.label} — ${opt.hint}`}
+                      style={[
+                        styles.intensityTile,
+                        { borderColor: colors.border },
+                        active && { backgroundColor: colors.like, borderColor: colors.like },
+                      ]}
+                      onPress={() => changeIntensity(opt.id)}
+                    >
+                      <Text style={styles.intensityIcon}>{opt.icon}</Text>
+                      <Text style={[styles.intensityLabel, { color: colors.textPrimary }, active && { color: "#fff" }]}>
+                        {opt.label}
+                      </Text>
+                      <Text style={[styles.intensityHint, { color: colors.textMuted }, active && { color: "rgba(255,255,255,0.85)" }]}>
+                        {opt.hint}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <Text style={[styles.hourLabel, { marginTop: 18 }]}>
                 {t(lang, "notificationsWindow")}
               </Text>
               <View style={styles.windowGrid}>
@@ -513,18 +584,22 @@ export default function Profile() {
             </View>
 
             <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 520 }}>
-              <Text style={[styles.modalLabel, { color: colors.textMuted }]}>
-                {SECURITY_LABELS[lang].currentPassword.toUpperCase()}
-              </Text>
-              <TextInput
-                testID="security-current-password"
-                value={secCurrentPw}
-                onChangeText={setSecCurrentPw}
-                placeholder="••••••••"
-                placeholderTextColor={colors.textMuted}
-                secureTextEntry
-                style={[styles.modalInput, { color: colors.textPrimary, borderColor: colors.border }]}
-              />
+              {user?.has_password !== false && (
+                <>
+                  <Text style={[styles.modalLabel, { color: colors.textMuted }]}>
+                    {SECURITY_LABELS[lang].currentPassword.toUpperCase()}
+                  </Text>
+                  <TextInput
+                    testID="security-current-password"
+                    value={secCurrentPw}
+                    onChangeText={setSecCurrentPw}
+                    placeholder="••••••••"
+                    placeholderTextColor={colors.textMuted}
+                    secureTextEntry
+                    style={[styles.modalInput, { color: colors.textPrimary, borderColor: colors.border }]}
+                  />
+                </>
+              )}
 
               <Text style={[styles.modalLabel, { color: colors.textMuted, marginTop: 16 }]}>
                 {SECURITY_LABELS[lang].questionLabel.toUpperCase()}
@@ -705,6 +780,22 @@ const styles = StyleSheet.create({
   },
   hourChipActive: { backgroundColor: COLORS.textPrimary, borderColor: COLORS.textPrimary },
   hourText: { color: COLORS.textSecondary, fontSize: 12, fontWeight: "800", letterSpacing: 1 },
+  intensityGrid: { flexDirection: "row", gap: 8, marginBottom: 4 },
+  intensityTile: {
+    flex: 1,
+    alignItems: "center",
+    // Well past the 44px minimum, so it is easy to hit with a thumb.
+    minHeight: 88,
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  intensityIcon: { fontSize: 22 },
+  intensityLabel: { fontSize: 13, fontWeight: "800", marginTop: 6 },
+  intensityHint: { fontSize: 11, fontWeight: "600", marginTop: 2 },
   windowGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   windowChip: {
     flexDirection: "row", alignItems: "center", gap: 8,

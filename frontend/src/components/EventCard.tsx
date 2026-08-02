@@ -13,12 +13,17 @@ import { countryFlag, countryLabel } from "../i18n/countries";
 import { eventImageSource } from "../utils/categoryImages";
 import api from "../api/client";
 
+export type EventKind = "event" | "birth" | "death";
+
 export type EventData = {
   id: string;
+  kind?: EventKind;
+  text_lang?: string;
   year: number;
   years_ago: number;
   title: string;
   text: string;
+  extract?: string;
   image_url: string | null;
   category: string;
   scope: "global" | "local";
@@ -40,8 +45,22 @@ type Props = {
   onSave: () => void;
 };
 
+const KIND_ICON: Record<string, string> = { event: "📜", birth: "🎂", death: "🕯️" };
+const KIND_LABEL_KEY: Record<string, "kindEventOne" | "kindBirthOne" | "kindDeathOne"> = {
+  event: "kindEventOne",
+  birth: "kindBirthOne",
+  death: "kindDeathOne",
+};
+
 const EventCard: React.FC<Props> = ({ event, lang, height, onLike, onDislike, onSave }) => {
   const accent = categoryColor(event.category);
+  const kind = event.kind || "event";
+  // it.wikipedia publishes no births/deaths, so some cards carry Spanish or
+  // English text. Say so plainly rather than letting it look like a bad translation.
+  const foreignText = Boolean(event.text_lang && event.text_lang !== lang);
+  const foreignLabel = foreignText
+    ? `${t(lang, "sourceLangNote")} ${t(lang, `langName${event.text_lang === "it" ? "It" : event.text_lang === "es" ? "Es" : "En"}` as any)}`
+    : "";
   const img = eventImageSource(event.image_url, event.category);
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -103,6 +122,13 @@ const EventCard: React.FC<Props> = ({ event, lang, height, onLike, onDislike, on
 
       {/* Top badges - pressable */}
       <View style={[styles.topRow, { top: topOffset }]}>
+        {kind !== "event" && (
+          <View style={styles.kindPill} testID={`card-kind-${event.id}`}>
+            <Text style={styles.kindText}>
+              {KIND_ICON[kind]} {t(lang, KIND_LABEL_KEY[kind]).toUpperCase()}
+            </Text>
+          </View>
+        )}
         <TouchableOpacity
           testID={`card-cat-${event.id}`}
           style={[styles.catPill, { borderLeftColor: accent }]}
@@ -242,6 +268,23 @@ const EventCard: React.FC<Props> = ({ event, lang, height, onLike, onDislike, on
           <ScrollView style={modalStyles.body} contentContainerStyle={{ paddingBottom: 40 }}>
             <Text style={modalStyles.descFull}>{event.text}</Text>
 
+            {/* Opening summary of the linked Wikipedia article — the real substance
+                behind the one-line entry, available offline with no AI call. */}
+            {event.extract && event.extract !== event.text ? (
+              <View style={[modalStyles.extractBox, { borderLeftColor: accent }]} testID={`extract-${event.id}`}>
+                <Text style={[modalStyles.extractLabel, { color: accent }]}>
+                  {t(lang, "deepDive").toUpperCase()}
+                </Text>
+                <Text style={modalStyles.extractText}>{event.extract}</Text>
+              </View>
+            ) : null}
+
+            {foreignText ? (
+              <Text style={modalStyles.sourceNote} testID={`source-lang-${event.id}`}>
+                🌐 {foreignLabel}
+              </Text>
+            ) : null}
+
             {/* AI ENRICHMENT SECTION */}
             {!aiText && !aiLoading && (
               <TouchableOpacity
@@ -346,6 +389,13 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   catText: { fontSize: 10, fontWeight: "800", letterSpacing: 2 },
+  kindPill: {
+    backgroundColor: "rgba(252,163,17,0.9)",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 4,
+  },
+  kindText: { fontSize: 10, fontWeight: "900", letterSpacing: 1.5, color: "#1A1200" },
   scopePill: {
     flexDirection: "row",
     alignItems: "center",
@@ -465,6 +515,21 @@ const modalStyles = StyleSheet.create({
     color: COLORS.textPrimary,
     fontSize: 16,
     lineHeight: 26,
+  },
+  extractBox: {
+    marginTop: 20,
+    padding: 14,
+    borderLeftWidth: 3,
+    borderRadius: 8,
+    backgroundColor: "rgba(255,255,255,0.04)",
+  },
+  extractLabel: { fontSize: 10, fontWeight: "900", letterSpacing: 2, marginBottom: 8 },
+  extractText: { color: COLORS.textSecondary, fontSize: 15, lineHeight: 24 },
+  sourceNote: {
+    color: COLORS.textMuted,
+    fontSize: 12,
+    marginTop: 14,
+    fontStyle: "italic",
   },
   wikiBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,

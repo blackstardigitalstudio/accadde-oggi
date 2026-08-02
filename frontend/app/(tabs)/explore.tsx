@@ -19,6 +19,13 @@ import { eventImageSource } from "../../src/utils/categoryImages";
 const CATS = ["wars", "science", "culture", "sports", "politics"];
 const DECADES = [1900, 1920, 1940, 1950, 1960, 1970, 1980, 1990, 2000, 2010, 2020];
 
+type Kind = "event" | "birth" | "death";
+const KINDS: { id: Kind; icon: string; labelKey: "kindEvent" | "kindBirth" | "kindDeath" }[] = [
+  { id: "event", icon: "📜", labelKey: "kindEvent" },
+  { id: "birth", icon: "🎂", labelKey: "kindBirth" },
+  { id: "death", icon: "🕯️", labelKey: "kindDeath" },
+];
+
 export default function Explore() {
   const { user } = useAuth();
   const { colors, mode } = useTheme();
@@ -30,6 +37,7 @@ export default function Explore() {
     (typeof params.category === "string" && CATS.includes(params.category)) ? params.category : null
   );
   const [activeDecade, setActiveDecade] = useState<number | null>(null);
+  const [activeKind, setActiveKind] = useState<Kind | null>(null);
   const [activeScope, setActiveScope] = useState<"all" | "global" | "local">(
     (params.scope === "global" || params.scope === "local") ? params.scope : "all"
   );
@@ -39,9 +47,10 @@ export default function Explore() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const params: any = { limit: 50, scope: activeScope };
+      const params: any = { limit: 150, scope: activeScope };
       if (activeCat) params.category = activeCat;
       if (activeDecade !== null) params.decade = activeDecade;
+      if (activeKind) params.kind = activeKind;
       const { data } = await api.get("/events/today", { params });
       setEvents(data.events || []);
     } catch {
@@ -49,7 +58,7 @@ export default function Explore() {
     } finally {
       setLoading(false);
     }
-  }, [activeCat, activeDecade, activeScope]);
+  }, [activeCat, activeDecade, activeScope, activeKind]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -70,6 +79,38 @@ export default function Explore() {
             </Text>
           )}
         </View>
+
+        {/* What kind of story — the first thing to narrow down now that a day
+            carries events, births and deaths together. */}
+        <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>{t(lang, "filterKind").toUpperCase()}</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll} contentContainerStyle={{ paddingHorizontal: 24, gap: 8 }}>
+          <TouchableOpacity
+            testID="kind-all"
+            accessibilityRole="button"
+            accessibilityState={{ selected: activeKind === null }}
+            style={[styles.chip, { borderColor: colors.border }, activeKind === null && { backgroundColor: colors.textPrimary, borderColor: colors.textPrimary }]}
+            onPress={() => setActiveKind(null)}
+          >
+            <Text style={[styles.chipText, { color: colors.textSecondary }, activeKind === null && { color: colors.bg }]}>
+              {t(lang, "kindAll").toUpperCase()}
+            </Text>
+          </TouchableOpacity>
+          {KINDS.map((k) => (
+            <TouchableOpacity
+              key={k.id}
+              testID={`kind-${k.id}`}
+              accessibilityRole="button"
+              accessibilityState={{ selected: activeKind === k.id }}
+              style={[styles.chip, { borderColor: colors.border }, activeKind === k.id && { backgroundColor: colors.textPrimary, borderColor: colors.textPrimary }]}
+              onPress={() => setActiveKind(k.id)}
+            >
+              <Text style={{ fontSize: 13 }}>{k.icon}</Text>
+              <Text style={[styles.chipText, { color: colors.textSecondary }, activeKind === k.id && { color: colors.bg }]}>
+                {t(lang, k.labelKey).toUpperCase()}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
 
         <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>{t(lang, "scope").toUpperCase()}</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll} contentContainerStyle={{ paddingHorizontal: 24, gap: 8 }}>
@@ -100,7 +141,7 @@ export default function Explore() {
           </TouchableOpacity>
         </ScrollView>
 
-        <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>{t(lang, "allCategories").toUpperCase()}</Text>
+        <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>{t(lang, "filterCategory").toUpperCase()}</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll} contentContainerStyle={{ paddingHorizontal: 24, gap: 8 }}>
           <TouchableOpacity
             testID="cat-all"

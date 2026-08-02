@@ -31,6 +31,12 @@ services:
         sync: false
       - key: GROQ_API_KEY       # optional; leave unset to use Wikipedia extracts
         sync: false
+      - key: SELF_URL           # keep-alive target: stops the free instance from sleeping
+        value: https://accadde-oggi-api.onrender.com
+      - key: CRON_SECRET        # protects /api/cron/* — copy it into the GitHub secret
+        generateValue: true
+      - key: GOOGLE_CLIENT_IDS  # comma separated Google OAuth client IDs (web,android,ios)
+        sync: false
 
   # ---------------- Web app (Expo static export) ----------------
   - type: web
@@ -44,6 +50,9 @@ services:
       # If you rename the API service, update this value to match.
       - key: EXPO_PUBLIC_BACKEND_URL
         value: https://accadde-oggi-api.onrender.com
+      # Google sign-in on the web build. Leave unset and the button stays hidden.
+      - key: EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
+        sync: false
     routes:
       - type: rewrite
         source: /*

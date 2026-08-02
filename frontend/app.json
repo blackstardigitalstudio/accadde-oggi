@@ -2,7 +2,7 @@
   "expo": {
     "name": "Accadde Oggi",
     "slug": "accadde-oggi",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "accaddeoggi",
@@ -21,7 +21,11 @@
       "package": "app.accaddeoggi.mobile",
       "permissions": [
         "NOTIFICATIONS",
-        "SCHEDULE_EXACT_ALARM"
+        "POST_NOTIFICATIONS",
+        "SCHEDULE_EXACT_ALARM",
+        "USE_EXACT_ALARM",
+        "VIBRATE",
+        "RECEIVE_BOOT_COMPLETED"
       ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",

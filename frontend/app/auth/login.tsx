@@ -14,6 +14,7 @@ import { COLORS } from "../../src/theme";
 import { t, T } from "../../src/i18n/translations";
 import { HERO_IMAGES } from "../../src/utils/categoryImages";
 import MadeInItaly from "../../src/components/MadeInItaly";
+import GoogleSignInButton, { GOOGLE_ENABLED, googleDividerStyles } from "../../src/components/GoogleSignInButton";
 
 const DEMO_EMAIL = "demo@accaddeoggi.app";
 const DEMO_PASSWORD = "Demo1234";
@@ -119,7 +120,26 @@ export default function Login() {
             </View>
 
             <View style={styles.form}>
-              <Text style={styles.label}>{T[lang].email.toUpperCase()}</Text>
+              {/* Fastest way in: one tap, nothing to type or remember. */}
+              {GOOGLE_ENABLED && (
+                <>
+                  <GoogleSignInButton
+                    lang={lang}
+                    onSuccess={() => router.replace("/(tabs)")}
+                    onError={setErr}
+                    disabled={loading}
+                  />
+                  <View style={googleDividerStyles.row}>
+                    <View style={googleDividerStyles.line} />
+                    <Text style={googleDividerStyles.text}>
+                      {t(lang, "orWithEmail").toUpperCase()}
+                    </Text>
+                    <View style={googleDividerStyles.line} />
+                  </View>
+                </>
+              )}
+
+              <Text style={[styles.label, GOOGLE_ENABLED && { marginTop: 20 }]}>{T[lang].email.toUpperCase()}</Text>
               <TextInput
                 testID="login-email-input"
                 value={email}
