@@ -43,6 +43,7 @@ export default function Profile() {
   const [notifIntensity, setNotifIntensity] = useState<Intensity>("normal");
   const [notifInfo, setNotifInfo] = useState<{ count: number; nextDate?: Date; nextTitle?: string; nextBody?: string }>({ count: 0 });
   const [previewSending, setPreviewSending] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [secModalOpen, setSecModalOpen] = useState(false);
   const [secCurrentPw, setSecCurrentPw] = useState("");
   const [secQid, setSecQid] = useState("pet");
@@ -193,6 +194,34 @@ export default function Profile() {
     }
   };
 
+  /** Wipe the likes that build the "top categories" list. */
+  const clearLikes = () => {
+    Alert.alert(
+      t(lang, "clearTopCats"),
+      t(lang, "clearTopCatsConfirm"),
+      [
+        { text: t(lang, "cancel"), style: "cancel" },
+        {
+          text: t(lang, "clearTopCats"),
+          style: "destructive",
+          onPress: async () => {
+            setClearing(true);
+            try {
+              await api.post("/events/reset", { types: ["like", "dislike"] });
+              await loadStats();
+            } catch {}
+            setClearing(false);
+          },
+        },
+      ]
+    );
+  };
+
+  /** Untick every interest at once. */
+  const clearInterests = async () => {
+    await updateUser({ interests: [] });
+  };
+
   const toggleInterest = async (key: string) => {
     const current = new Set(user?.interests || []);
     if (current.has(key)) current.delete(key);
@@ -273,6 +302,12 @@ export default function Profile() {
         {stats && stats.top_categories && stats.top_categories.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>{t(lang, "topCats").toUpperCase()}</Text>
+            {/* Say where this list comes from. It is computed from likes, not
+                from the interests below — without this line the two look like
+                the same setting and the missing "save" button reads as a bug. */}
+            <Text style={[styles.interestsHint, { color: colors.textMuted }]}>
+              {t(lang, "topCatsHint")}
+            </Text>
             <View style={styles.catsList}>
               {stats.top_categories.map((c) => (
                 <View key={c.category} style={[styles.catPill, { borderColor: categoryColor(c.category) }]}>
@@ -284,6 +319,17 @@ export default function Profile() {
                 </View>
               ))}
             </View>
+            <TouchableOpacity
+              testID="clear-top-cats"
+              onPress={clearLikes}
+              disabled={clearing}
+              style={[styles.clearBtn, { borderColor: colors.border, opacity: clearing ? 0.5 : 1 }]}
+              accessibilityRole="button"
+            >
+              <Text style={[styles.clearBtnText, { color: colors.like }]}>
+                {t(lang, "clearTopCats").toUpperCase()}
+              </Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -469,6 +515,26 @@ export default function Profile() {
           <Text style={[styles.interestsHint, { color: colors.textMuted }]}>
             {t(lang, "interestsHint")}
           </Text>
+          {/* There is no save button because there is nothing to save: a tap is
+              already stored. Saying so removes the doubt, and the reset gives a
+              way out — the thing that was missing before. */}
+          <View style={styles.interestsToolbar}>
+            <Text style={[styles.autoSaved, { color: colors.textMuted }]}>
+              ✓ {t(lang, "savedAutomatically")}
+            </Text>
+            {interestsSet.size > 0 && (
+              <TouchableOpacity
+                testID="clear-interests"
+                onPress={clearInterests}
+                accessibilityRole="button"
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Text style={[styles.clearInline, { color: colors.like }]}>
+                  {t(lang, "clearInterests")}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
 
           {Object.keys(INTERESTS).map((cat) => {
             const accent = categoryColor(cat);
@@ -855,6 +921,22 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
   },
   interestsHint: { color: COLORS.textMuted, fontSize: 12, lineHeight: 18, marginBottom: 14 },
+  interestsToolbar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 14,
+  },
+  autoSaved: { fontSize: 11, fontWeight: "700", letterSpacing: 0.5 },
+  clearInline: { fontSize: 12, fontWeight: "800", textDecorationLine: "underline" },
+  clearBtn: {
+    marginTop: 12,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: "center",
+  },
+  clearBtnText: { fontSize: 11, fontWeight: "900", letterSpacing: 1.5 },
   interestCat: { marginBottom: 14 },
   interestCatHead: {
     flexDirection: "row", alignItems: "center", gap: 10,

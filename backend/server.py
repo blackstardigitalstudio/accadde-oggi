@@ -785,22 +785,22 @@ async def build_merged_events(month: int, day: int) -> List[dict]:
         # Scope: global if present in 2+ editions, otherwise local
         scope = "global" if len(sources) >= 2 else "local"
 
-        # Pick best text for each user language: fallback chain
+        # Store each language's text under ITS OWN key, and only that.
+        #
+        # This used to run the fallback chain here and write, say, the Spanish
+        # sentence into text_by_lang["it"]. Everything downstream then believed
+        # it was holding Italian, and Italian readers got Spanish cards that
+        # claimed to be Italian. The fallback belongs at display time, where it
+        # can be seen and labelled — never baked into the stored data.
         text_by_lang = {}
         title_by_lang = {}
         extract_by_lang = {}
-        for ul in ("it", "en", "es"):
-            chosen = None
-            for candidate in LANG_FALLBACK[ul]:
-                if per_lang.get(candidate):
-                    chosen = per_lang[candidate]
-                    break
-            if chosen:
-                pages = chosen.get("pages") or []
-                page_title = (pages[0].get("normalizedtitle") or pages[0].get("title")) if pages else None
-                text_by_lang[ul] = chosen.get("text", "")
-                title_by_lang[ul] = page_title or chosen.get("text", "").split(".")[0][:80]
-                extract_by_lang[ul] = _page_extract(chosen)
+        for lang_code, raw in per_lang.items():
+            pages = raw.get("pages") or []
+            page_title = (pages[0].get("normalizedtitle") or pages[0].get("title")) if pages else None
+            text_by_lang[lang_code] = raw.get("text", "")
+            title_by_lang[lang_code] = page_title or raw.get("text", "").split(".")[0][:80]
+            extract_by_lang[lang_code] = _page_extract(raw)
 
         # Country relevance detected from any language text
         all_text = " ".join(text_by_lang.values()) + " " + " ".join([str(t) for t in title_by_lang.values()])
@@ -1274,8 +1274,18 @@ async def events_today(
     ).to_list(length=10000)
     disliked_ids = {d["event_id"] for d in disliked_list}
 
-    # Filters
-    pool = all_events
+    # Language gate: only serve what actually exists in the reader's language.
+    #
+    # Mixing languages was the single worst thing the feed did — an Italian
+    # reader would get a Spanish sentence about Italian troops. Cards are either
+    # in your language or they are not shown. People (births/deaths) reach this
+    # point already carrying a real Italian article, fetched during curation.
+    pool = [e for e in all_events if user_lang in native_langs(e)]
+    if not pool:
+        # Nothing at all in their language: better a foreign card than a blank
+        # screen, and the card says which Wikipedia it came from.
+        pool = all_events
+
     if kind:
         pool = [e for e in pool if e.get("kind", "event") == kind]
     if category:
@@ -1577,6 +1587,26 @@ async def favorites(
             ev["saved"] = True
             events.append(ev)
     return {"count": len(events), "events": events}
+
+
+class ResetBody(BaseModel):
+    # 'likes' also clears what drives "categorie preferite" — that list is
+    # computed from likes, which is exactly why users could not find a way to
+    # clear it from the interests screen.
+    types: List[Literal["like", "dislike", "save"]] = Field(min_length=1)
+
+
+@api.post("/events/reset")
+async def reset_interactions(body: ResetBody, current=Depends(get_current_user)):
+    """Erase the user's own likes / dislikes / saves.
+
+    Without this there was no way back: a mis-tapped like shaped the feed and
+    the "top categories" list forever, with no visible undo.
+    """
+    result = await db.interactions.delete_many(
+        {"user_id": current["id"], "type": {"$in": list(body.types)}}
+    )
+    return {"ok": True, "removed": result.deleted_count}
 
 
 @api.get("/events/stats")
