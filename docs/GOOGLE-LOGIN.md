@@ -1,4 +1,39 @@
-# Accedi con Google — cosa devi fare tu (10 minuti, una volta sola)
+# Accedi con Google
+
+## ✅ GIÀ FATTO — le credenziali esistono (05/08/2026)
+
+Progetto Google Cloud **Accadde Oggi** (`crack-petal-504317-a9`), schermata di
+consenso **in produzione** (chiunque abbia un account Google può accedere, non
+solo utenti di prova).
+
+```
+GOOGLE_WEB_CLIENT_ID     = 727081593792-pbs5ve4p4l7cr4ck60f3dsd8263afs16.apps.googleusercontent.com
+GOOGLE_ANDROID_CLIENT_ID = 727081593792-g8i94utsk023koa9ssugk57od5dkk1kc.apps.googleusercontent.com
+GOOGLE_IOS_CLIENT_ID     = 727081593792-s1qd9u459hgcvm85v3nc0mmnqcblr8oe.apps.googleusercontent.com
+```
+
+**Manca solo:** incollare queste tre righe su Render (servizio `accadde-oggi-api`
+→ Environment). Non serve ricompilare l'app: appena Render riparte, il bottone
+"Continua con Google" compare da solo anche su chi ce l'ha già installata.
+
+Questi ID non sono segreti — viaggiano in chiaro in ogni richiesta che il browser
+manda a Google. Il segreto del client web non serve e non è stato salvato da
+nessuna parte: l'app usa il flusso con `id_token`, che non lo richiede.
+
+Dettagli di come sono stati creati:
+- Client **Web**: origini e redirect `https://accadde-oggi-web.onrender.com` e
+  `http://localhost:8081`
+- Client **Android**: pacchetto `app.accaddeoggi.mobile`, impronta SHA-1
+  `D4:8A:52:19:0A:ED:4E:4C:85:D7:FB:80:DC:18:E3:8D:72:A5:27:79` — è la **chiave di
+  firma di Play**, quella con cui Google firma ciò che scaricano gli utenti. La
+  chiave di *caricamento* (`CF:CD:78:55:50:EB:4A:0D:ED:A6:D3:EC:3B:9A:47:88:E9:EE:31:6F`)
+  è un'altra: serve solo se un giorno vuoi che il login funzioni anche negli APK
+  installati a mano, e in quel caso va creato un secondo client Android.
+- Client **iOS**: bundle `app.accaddeoggi.mobile`
+
+---
+
+## Come rifarlo da zero (se un giorno serve)
 
 Il codice è già pronto e funziona da solo. Manca solo una cosa che **solo tu puoi
 fare**, perché va fatta dal tuo account Google: creare le credenziali OAuth.
