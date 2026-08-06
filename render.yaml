@@ -35,16 +35,21 @@ services:
         value: https://accadde-oggi-api.onrender.com
       - key: CRON_SECRET        # protects /api/cron/* — copy it into the GitHub secret
         generateValue: true
-      # Google sign-in. Set these and the published app starts offering the
-      # Google button — no rebuild, no new store review.
+      # Google sign-in — project "Accadde Oggi" (crack-petal-504317-a9).
+      #
+      # These sit in the file rather than the dashboard because an OAuth client
+      # ID is not a secret: it travels in the clear in every authorisation URL
+      # the browser sends to Google. What actually guards the account is the
+      # token check in /api/auth/google, which stays on the server.
+      #
+      # Keeping them here means one push configures the deploy, and the
+      # published app gains the Google button without being rebuilt.
       - key: GOOGLE_WEB_CLIENT_ID
-        sync: false
+        value: 727081593792-pbs5ve4p4l7cr4ck60f3dsd8263afs16.apps.googleusercontent.com
       - key: GOOGLE_ANDROID_CLIENT_ID
-        sync: false
+        value: 727081593792-g8i94utsk023koa9ssugk57od5dkk1kc.apps.googleusercontent.com
       - key: GOOGLE_IOS_CLIENT_ID
-        sync: false
-      - key: GOOGLE_CLIENT_IDS   # extra accepted audiences (e.g. Play App Signing)
-        sync: false
+        value: 727081593792-s1qd9u459hgcvm85v3nc0mmnqcblr8oe.apps.googleusercontent.com
       - key: FAME_MIN          # min. Wikipedia editions for a person to earn a card
         value: "30"
 
@@ -60,9 +65,10 @@ services:
       # If you rename the API service, update this value to match.
       - key: EXPO_PUBLIC_BACKEND_URL
         value: https://accadde-oggi-api.onrender.com
-      # Google sign-in on the web build. Leave unset and the button stays hidden.
+      # Fallback for the web build if the API is ever unreachable at load time.
+      # The app normally asks the API for this at runtime.
       - key: EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
-        sync: false
+        value: 727081593792-pbs5ve4p4l7cr4ck60f3dsd8263afs16.apps.googleusercontent.com
     routes:
       - type: rewrite
         source: /*
