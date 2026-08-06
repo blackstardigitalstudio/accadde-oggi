@@ -184,6 +184,7 @@ export const T: Translations = {
     // Content kinds
     filterKind: "Tipo",
     filterCategory: "Categoria",
+    filterSubcategory: "Genere",
     topCatsHint: "Calcolate dai tuoi Mi piace, non dagli interessi qui sotto.",
     clearTopCats: "Azzera i miei Mi piace",
     clearTopCatsConfirm: "Cancella tutti i Mi piace e Non mi piace. Le categorie preferite si svuotano e il feed riparte da zero.",
@@ -361,6 +362,7 @@ export const T: Translations = {
 
     filterKind: "Type",
     filterCategory: "Category",
+    filterSubcategory: "Genre",
     topCatsHint: "Worked out from your likes, not from the interests below.",
     clearTopCats: "Clear my likes",
     clearTopCatsConfirm: "Deletes every like and dislike. Top categories empty out and the feed starts fresh.",
@@ -538,6 +540,7 @@ export const T: Translations = {
 
     filterKind: "Tipo",
     filterCategory: "Categoría",
+    filterSubcategory: "Género",
     topCatsHint: "Calculadas con tus Me gusta, no con los intereses de abajo.",
     clearTopCats: "Borrar mis Me gusta",
     clearTopCatsConfirm: "Borra todos los Me gusta y No me gusta. Las categorías favoritas se vacían y el feed empieza de cero.",

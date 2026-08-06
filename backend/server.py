@@ -269,6 +269,10 @@ SUBCATEGORY_KEYWORDS = {
                      "guerra fría", "soviético"],
         "revolutions": ["revolution", "uprising", "rivoluzion", "rivolta", "revolución", "rebelión"],
         "civil_wars": ["civil war", "guerra civile", "guerra civil"],
+        "terrorism": ["terror", "attentat", "bomb attack", "hijack", "strage",
+                      "attentato", "dirottamento", "atentado", "secuestro aéreo"],
+        "independence": ["independence", "indipendenza", "independencia",
+                         "liberation", "liberazione", "liberación"],
     },
     "science": {
         "space": ["space", "moon", "mars", "nasa", "rocket", "satellite", "spacecraft", "astronaut",
@@ -287,6 +291,15 @@ SUBCATEGORY_KEYWORDS = {
         "technology": ["computer", "internet", "software", "microchip", "apple", "microsoft",
                        "google", "ibm", "tesla", "ai", "algorithm",
                        "computadora", "algoritmo"],
+        "aviation": ["aircraft", "airplane", "flight", "aviation", "airline", "pilot",
+                     "aereo", "volo", "aviazione", "pilota",
+                     "avión", "vuelo", "aviación", "piloto"],
+        "environment": ["climate", "earthquake", "volcano", "hurricane", "flood", "tsunami",
+                        "clima", "terremoto", "vulcano", "uragano", "alluvione",
+                        "huracán", "inundación", "medio ambiente"],
+        "inventions": ["invent", "patent", "prototype", "first ever",
+                       "invenzione", "brevetto", "prototipo",
+                       "invención", "patente", "prototipo"],
     },
     "culture": {
         "cinema": ["film", "movie", "director", "cinema", "oscar", "hollywood", "premier",
@@ -302,6 +315,11 @@ SUBCATEGORY_KEYWORDS = {
                 "pittur", "scultura", "artista", "mostra", "gallerie", "museo",
                 "pintura", "escultura", "artista", "exposición", "galería", "museo"],
         "fashion": ["fashion", "design", "couture", "moda", "stilista", "diseñador"],
+        "television": ["television", "tv ", "broadcast", "series", "sitcom",
+                       "televisione", "trasmissione", "serie tv",
+                       "televisión", "emisión", "serie"],
+        "theatre": ["theatre", "theater", "opera house", "ballet", "playwright",
+                    "teatro", "balletto", "drammaturgo", "ballet"],
     },
     "sports": {
         "football": ["football", "soccer", "fifa", "world cup", "premier league",
@@ -314,6 +332,9 @@ SUBCATEGORY_KEYWORDS = {
         "cycling": ["cycling", "tour de france", "giro d'italia", "vuelta",
                     "ciclismo", "ciclista"],
         "boxing": ["boxing", "heavyweight", "knockout", "pugilato", "boxeo"],
+        "basketball": ["basketball", "nba", "pallacanestro", "baloncesto"],
+        "athletics": ["athletics", "marathon", "sprint", "record",
+                      "atletica", "maratona", "atletismo", "maratón"],
     },
     "politics": {
         "elections": ["elect", "ballot", "campaign", "vote", "elezion", "campagna elettorale",
@@ -327,6 +348,9 @@ SUBCATEGORY_KEYWORDS = {
         "assassinations": ["assassin", "murder", "killed", "shot", "died",
                            "assassin", "ucciso", "morte",
                            "asesinat", "muerto", "asesinad"],
+        "human_rights": ["rights", "slavery", "suffrage", "apartheid", "equality",
+                         "diritti", "schiavitù", "suffragio", "uguaglianza",
+                         "derechos", "esclavitud", "sufragio", "igualdad"],
     },
 }
 
@@ -1252,6 +1276,7 @@ async def events_today(
     decade: Optional[int] = Query(None),
     scope: Optional[Literal["global", "local", "all"]] = Query("all"),
     kind: Optional[Literal["event", "birth", "death"]] = Query(None),
+    subcategory: Optional[str] = Query(None, max_length=40),
     limit: int = Query(60, ge=1, le=250),
     current=Depends(get_current_user),
 ):
@@ -1290,6 +1315,8 @@ async def events_today(
         pool = [e for e in pool if e.get("kind", "event") == kind]
     if category:
         pool = [e for e in pool if e["category"] == category]
+    if subcategory:
+        pool = [e for e in pool if e.get("subcategory") == subcategory]
     if decade is not None:
         pool = [e for e in pool if (e["year"] // 10) * 10 == decade]
     if scope and scope != "all":

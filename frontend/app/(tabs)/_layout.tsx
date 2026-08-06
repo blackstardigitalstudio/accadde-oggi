@@ -1,35 +1,30 @@
 import { Tabs } from "expo-router";
-import { Platform } from "react-native";
 import { Home, Compass, Heart, User } from "lucide-react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "../../src/contexts/AuthContext";
 import { useTheme } from "../../src/contexts/ThemeContext";
 import { t } from "../../src/i18n/translations";
+import AnimatedTabBar from "../../src/components/AnimatedTabBar";
+import { useTabBarHeight } from "../../src/hooks/useTabBarHeight";
 
 export default function TabsLayout() {
   const { user } = useAuth();
   const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
   const lang = (user?.language as "it" | "en" | "es") || "it";
-
-  const bottomInset = insets.bottom || (Platform.OS === "android" ? 12 : 0);
-  const tabHeight = 58 + bottomInset;
+  // Shared with the feed, so the cards and the bar can never disagree.
+  const { bottomInset, height: tabHeight } = useTabBarHeight();
 
   return (
     <Tabs
+      // The bar draws itself: a highlight slides to the tab you picked, the icon
+      // lifts, and the phone gives a small tap back. The stock bar only changed
+      // a colour, which never quite reads as "I moved somewhere".
+      tabBar={(props) => (
+        <AnimatedTabBar {...props} bottomInset={bottomInset} height={tabHeight} />
+      )}
       screenOptions={{
         headerShown: false,
-        tabBarStyle: {
-          backgroundColor: colors.tabBar,
-          borderTopColor: colors.border,
-          borderTopWidth: 1,
-          height: tabHeight,
-          paddingBottom: bottomInset + 4,
-          paddingTop: 8,
-        },
         tabBarActiveTintColor: colors.like,
         tabBarInactiveTintColor: colors.textSecondary,
-        tabBarLabelStyle: { fontSize: 10, fontWeight: "700", letterSpacing: 1 },
       }}
     >
       <Tabs.Screen
