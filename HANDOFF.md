@@ -72,13 +72,77 @@ TypeScript e `keep-warm.yml` sono rimasti intatti).
 - `app.json` a **1.1.0**: le nuove dipendenze native (expo-auth-session,
   expo-crypto) e i permessi nuovi richiedono una **build nuova**, non basta l'OTA.
 
-### Da fare
-1. Su Render (`accadde-oggi-api`): impostare `SELF_URL`, `CRON_SECRET`, e
-   `GOOGLE_CLIENT_IDS` quando le credenziali Google sono pronte.
-2. Merge del branch su `main` → auto-deploy del backend (i contenuti nuovi
-   arrivano subito anche alle app già installate).
-3. Nuova build EAS per notifiche e Google (quota permettendo).
+### Chiuso il 06/08/2026 — tutto in produzione
+
+Merge fatto su `main`, backend ridistribuito e **verificato interrogandolo**:
+
+| Verifica | Esito |
+|---|---|
+| Schede servite (IT) | 120, **0 in spagnolo o inglese** |
+| Login Google | attivo, `{"enabled": true}` |
+| Token Google falso | respinto, 401 |
+| `/api/cron/*` senza chiave | bloccato, 403 |
+
+**Le chiavi Google stanno in `render.yaml`, non nel pannello.** Un client ID
+OAuth non è un segreto: viaggia in chiaro in ogni richiesta che il browser manda
+a Google. Ciò che protegge l'account è la verifica del token in
+`/api/auth/google`. Tenerle nel file significa che un push configura il deploy,
+senza dover entrare nella dashboard. Il *secret* del client web non serve e non
+è salvato da nessuna parte: il flusso `id_token` non lo usa.
+
+Progetto Google Cloud: **Accadde Oggi** (`crack-petal-504317-a9`), consenso **in
+produzione** (non più solo utenti di prova). Il client Android usa la **SHA-1 di
+Play App Signing** (`D4:8A:52:…:27:79`), non quella di caricamento: con quella
+sbagliata il login va in sviluppo e fallisce nell'app pubblicata. È l'errore più
+comune di tutti.
+
+### Correzioni della sessione del 05-06/08
+
+- **Lingua sporca alla radice**: `build_merged_events` applicava la catena di
+  ripiego mentre *costruiva*, scrivendo la frase spagnola dentro
+  `text_by_lang["it"]`. Tutto il resto credeva in buona fede di avere italiano.
+  Ora ogni lingua sta sotto la propria chiave e il feed serve **solo** ciò che
+  esiste nella lingua del lettore. Misurato: 86 schede straniere → 0.
+- **Categorie preferite**: non era un bug di salvataggio ma un equivoco — quella
+  lista si calcola dai Mi piace, non dagli interessi. Aggiunti
+  `POST /api/events/reset`, "Azzera i miei Mi piace", "Togli tutti" e la scritta
+  che gli interessi si salvano da soli.
+- **36 sottogeneri** (erano 26, e nessuno poteva filtrarli: il campo usciva
+  dall'API e finiva nel nulla). Filtro `?subcategory=` + riga in Esplora che
+  compare solo dopo aver scelto una categoria.
+- **Esplora da 4 file di filtri a 2**: ambito e decade dietro "Altri filtri",
+  con contatore dei filtri nascosti attivi.
+- **Menu inferiore animato** (`AnimatedTabBar`) con barretta che scorre e
+  risposta aptica.
+- **Fessura di 12px sotto ogni scheda**: feed e barra calcolavano l'altezza
+  ciascuno per conto proprio. Ora la decide `useTabBarHeight` e basta.
+- **Apertura**: tolti i file avanzati dal modello Expo (`react-logo*`,
+  `partial-react-logo`, `app-image`, `splash-image`) e messa l'icona dentro la
+  zona sicura di Android. Splash e schermata nativa ora usano la stessa arte,
+  quindi non c'è più il salto che sembrava un disegno che compare a caso.
+- **Play Store**: tolto `USE_EXACT_ALARM`, che Google riserva ad app di
+  sveglie/timer/calendari e che avrebbe messo a rischio l'approvazione.
+- Segreto cron spostato dalla query string a un header, confronto a tempo
+  costante.
+
+### Build
+- **AAB versionCode 10** (per il Play Store):
+  https://expo.dev/artifacts/eas/yuaVee9QaF6hfxjQutO1ZB5nwj-dmykLa-tJi1n7iRE.aab
+- **APK** (profilo `preview`, installabile a mano per provare): firmato con la
+  chiave di *caricamento*, quindi **il login Google non funziona lì** — Google
+  riconosce l'app dalla firma. Per provare anche quello serve il test interno di
+  Play Console.
+
+### Resta da fare
+1. Caricare l'AAB su Play Console (serve l'account sviluppatore).
+2. Provare il login Google **da test interno**, non da APK: è l'unico modo.
+3. Se si vuole: analisi dell'app "Lo Sapevi Che" (nicchie di notizie), chiesta e
+   non ancora fatta.
 
 ## Note
-- Push da `D:\accadde_clone` con PAT GitHub fine-grained (solo questa repo, scade 28/06/2026); una nuova sessione potrebbe doverne rigenerare uno.
+- Push da `D:ccadde_clone` con PAT GitHub fine-grained; il CLI `gh` in questa
+  macchina è già autenticato come `blackstardigitalstudio` (l'account giusto).
+  Attenzione: nel browser esistono altri account simili
+  (`blackstardigitals-lang`, `blackstardigitalstudio-arch`) che **non** hanno
+  permessi sul repo.
 - Made in Italy 🇮🇹

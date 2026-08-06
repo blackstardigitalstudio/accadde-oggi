@@ -1,7 +1,7 @@
 {
   "backend/server.py": {
-    "mtime": 1786018800.886198,
-    "ast_hash": "3bd7de0dbc6eedb2714074ee1affd53c",
+    "mtime": 1785691750.5305326,
+    "ast_hash": "3a58230b8d897074f92244e41a3571d5",
     "semantic_hash": ""
   },
   "backend/tests/conftest.py": {
@@ -45,23 +45,23 @@
     "semantic_hash": ""
   },
   "frontend/.expo/types/router.d.ts": {
-    "mtime": 1786019312.4552298,
-    "ast_hash": "fc908083e951e6edec3950593b882db4",
+    "mtime": 1785691198.8066218,
+    "ast_hash": "9ca504a6c8ed1807c25b7cce425eda1f",
     "semantic_hash": ""
   },
   "frontend/app.json": {
-    "mtime": 1786017507.8408215,
-    "ast_hash": "2b935e971a2c4267fe1051eb60d92c15",
+    "mtime": 1785691732.4490273,
+    "ast_hash": "abe32703381128655d6f183702017c3e",
     "semantic_hash": ""
   },
   "frontend/app/(tabs)/_layout.tsx": {
-    "mtime": 1786019332.7276454,
-    "ast_hash": "75568b70f50cb2f5054336eb4a0e8983",
+    "mtime": 1785689753.875241,
+    "ast_hash": "cdec53d061552029e9d3d348199d9526",
     "semantic_hash": ""
   },
   "frontend/app/(tabs)/explore.tsx": {
-    "mtime": 1786026799.0177147,
-    "ast_hash": "ea3297fce2d0302e3648eef49e639b07",
+    "mtime": 1785689765.4586225,
+    "ast_hash": "57c576bd0aa372e1857dea61d29031f6",
     "semantic_hash": ""
   },
   "frontend/app/(tabs)/favorites.tsx": {
@@ -70,13 +70,13 @@
     "semantic_hash": ""
   },
   "frontend/app/(tabs)/index.tsx": {
-    "mtime": 1786019332.7286458,
-    "ast_hash": "f97969719f34cc4baec026ef1b66f24a",
+    "mtime": 1785689765.4586225,
+    "ast_hash": "7bac57a65e90d9d922ba55de71bc4946",
     "semantic_hash": ""
   },
   "frontend/app/(tabs)/profile.tsx": {
-    "mtime": 1785936525.6234572,
-    "ast_hash": "ae7809f266e0611fe472504dd922edfd",
+    "mtime": 1785689765.4611351,
+    "ast_hash": "0b57805e4e98a1491ff79df7ca8cba4b",
     "semantic_hash": ""
   },
   "frontend/app/+html.tsx": {
@@ -100,13 +100,13 @@
     "semantic_hash": ""
   },
   "frontend/app/auth/login.tsx": {
-    "mtime": 1785692555.3911817,
-    "ast_hash": "fd71c640afd0530d70aceb47060a374a",
+    "mtime": 1785689765.4658892,
+    "ast_hash": "0265537b5e4af449bce0b27edc6c9ec2",
     "semantic_hash": ""
   },
   "frontend/app/auth/register.tsx": {
-    "mtime": 1785692561.0607362,
-    "ast_hash": "5e13ed368ee3cc95f48857325c16d4e7",
+    "mtime": 1785689765.4658892,
+    "ast_hash": "6ac6ee57014dc5ec60709200e4faf058",
     "semantic_hash": ""
   },
   "frontend/app/index.tsx": {
@@ -130,7 +130,7 @@
     "semantic_hash": ""
   },
   "frontend/expo-env.d.ts": {
-    "mtime": 1786019007.564555,
+    "mtime": 1785689276.894025,
     "ast_hash": "0dd9dccdb4b08595bc83df70d6a154d3",
     "semantic_hash": ""
   },
@@ -160,8 +160,8 @@
     "semantic_hash": ""
   },
   "frontend/src/components/GoogleSignInButton.tsx": {
-    "mtime": 1785692539.193453,
-    "ast_hash": "22b66683241fc63be31087e985a65d74",
+    "mtime": 1785689765.4668949,
+    "ast_hash": "538b342b8e4e989cbfd6e1d9ef55e969",
     "semantic_hash": ""
   },
   "frontend/src/components/MadeInItaly.tsx": {
@@ -190,8 +190,8 @@
     "semantic_hash": ""
   },
   "frontend/src/i18n/interests.ts": {
-    "mtime": 1786018825.9735234,
-    "ast_hash": "51134549535cc008b4ef9a294c8f8258",
+    "mtime": 1777038706.0,
+    "ast_hash": "5dfe5de9d961da859c51a590b2d4864b",
     "semantic_hash": ""
   },
   "frontend/src/i18n/security.ts": {
@@ -200,8 +200,8 @@
     "semantic_hash": ""
   },
   "frontend/src/i18n/translations.ts": {
-    "mtime": 1786026776.4239023,
-    "ast_hash": "47edb383fbe1162bcbcedd23b51dff01",
+    "mtime": 1785689765.4679217,
+    "ast_hash": "1c1b607e51df9c6d6aa6591de96fda60",
     "semantic_hash": ""
   },
   "frontend/src/services/notifications.ts": {
@@ -280,8 +280,8 @@
     "semantic_hash": ""
   },
   "docs/GOOGLE-LOGIN.md": {
-    "mtime": 1785935958.214075,
-    "ast_hash": "7a1e2c3156b6943f25e96ce520e3f0b4",
+    "mtime": 1785689765.457624,
+    "ast_hash": "5d7ebc1858502e1ae90e72a563febd9a",
     "semantic_hash": ""
   },
   "frontend/.expo/README.md": {
@@ -305,8 +305,8 @@
     "semantic_hash": ""
   },
   "render.yaml": {
-    "mtime": 1786022222.471004,
-    "ast_hash": "d74cafaf89dc5031b2fc658846f350c1",
+    "mtime": 1785691248.9836247,
+    "ast_hash": "f84aa3136822271ca042b32251b76a84",
     "semantic_hash": ""
   },
   "frontend/.expo/web/cache/production/images/favicon/favicon-38240320cf730bf9164ef0744cf2a428c827c0312c0c42a057ac3a4b7de0aafd-contain-transparent/favicon-48.png": {
@@ -320,8 +320,13 @@
     "semantic_hash": ""
   },
   "frontend/assets/images/adaptive-icon.png": {
-    "mtime": 1786017500.2455215,
-    "ast_hash": "fdf9a621fbd42d81698f01f9f9595e3d",
+    "mtime": 1780127125.104489,
+    "ast_hash": "dc27c60bcc2f9d30c8c7d691cd0f480c",
+    "semantic_hash": ""
+  },
+  "frontend/assets/images/app-image.png": {
+    "mtime": 1777038706.0,
+    "ast_hash": "a0a25e90aaa4ff2415839c978ce64783",
     "semantic_hash": ""
   },
   "frontend/assets/images/categories/culture.png": {
@@ -354,9 +359,34 @@
     "ast_hash": "6e9610f17cc36afd8b4a102e44f66543",
     "semantic_hash": ""
   },
+  "frontend/assets/images/partial-react-logo.png": {
+    "mtime": 1777038706.0,
+    "ast_hash": "8f14e478886737f3323a2ac79c833749",
+    "semantic_hash": ""
+  },
+  "frontend/assets/images/react-logo.png": {
+    "mtime": 1777038706.0,
+    "ast_hash": "695d5a1c6f29a689130f3aaa573aec6e",
+    "semantic_hash": ""
+  },
+  "frontend/assets/images/react-logo@2x.png": {
+    "mtime": 1777038706.0,
+    "ast_hash": "b507e7f2c91ebc8fe24dee79ccb3b600",
+    "semantic_hash": ""
+  },
+  "frontend/assets/images/react-logo@3x.png": {
+    "mtime": 1777038706.0,
+    "ast_hash": "8a4d0e5b845044e56e3b2df627d01cfd",
+    "semantic_hash": ""
+  },
   "frontend/assets/images/splash-icon.png": {
-    "mtime": 1786017500.2949388,
-    "ast_hash": "fdf9a621fbd42d81698f01f9f9595e3d",
+    "mtime": 1785689753.8812444,
+    "ast_hash": "6e9610f17cc36afd8b4a102e44f66543",
+    "semantic_hash": ""
+  },
+  "frontend/assets/images/splash-image.png": {
+    "mtime": 1785689753.8827708,
+    "ast_hash": "6e9610f17cc36afd8b4a102e44f66543",
     "semantic_hash": ""
   },
   "marketing/assets/adaptive_fg_1024.png": {
@@ -377,16 +407,6 @@
   "marketing/assets/store_icon.png": {
     "mtime": 1785689753.889899,
     "ast_hash": "36e896b509068789aa2e8578168b444e",
-    "semantic_hash": ""
-  },
-  "frontend/src/components/AnimatedTabBar.tsx": {
-    "mtime": 1786019432.4311738,
-    "ast_hash": "50057ede016dffa89da8179777b8ed6e",
-    "semantic_hash": ""
-  },
-  "frontend/src/hooks/useTabBarHeight.ts": {
-    "mtime": 1786019311.316653,
-    "ast_hash": "091190cedc11414a06d091419b42ce42",
     "semantic_hash": ""
   }
 }

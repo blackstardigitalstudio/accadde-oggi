@@ -1,16 +1,16 @@
-# Graph Report - accadde-oggi-main  (2026-08-06)
+# Graph Report - accadde-oggi-main  (2026-08-02)
 
 ## Corpus Check
-- 60 files · ~77,530 words
+- 58 files · ~93,389 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 587 nodes · 916 edges · 43 communities (37 shown, 6 thin omitted)
+- 570 nodes · 879 edges · 40 communities (34 shown, 6 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 3 edges (avg confidence: 0.5)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `f9303eeb`
+- Built from commit: `906cad28`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -51,15 +51,12 @@
 - expo-env.d.ts
 - apply_app_icon.py
 - setupAndroidChannel
-- AnimatedTabBar.tsx
-- package.json
-- devDependencies
 
 ## God Nodes (most connected - your core abstractions)
 1. `useAuth()` - 19 edges
 2. `expo` - 18 edges
-3. `useTheme()` - 17 edges
-4. `build_merged_events()` - 15 edges
+3. `build_merged_events()` - 15 edges
+4. `useTheme()` - 15 edges
 5. `Profile()` - 13 edges
 6. `Lang` - 12 edges
 7. `send_daily_push()` - 11 edges
@@ -82,11 +79,11 @@
 ## Import Cycles
 - None detected.
 
-## Communities (43 total, 6 thin omitted)
+## Communities (40 total, 6 thin omitted)
 
 ### Community 0 - "profile.tsx"
-Cohesion: 0.06
-Nodes (75): Forgot(), styles, Login(), styles, Register(), styles, Index(), styles (+67 more)
+Cohesion: 0.05
+Nodes (77): Forgot(), styles, Login(), styles, Register(), styles, Index(), styles (+69 more)
 
 ### Community 1 - "dependencies"
 Cohesion: 0.05
@@ -94,7 +91,7 @@ Nodes (44): dependencies, axios, @babel/runtime, expo, expo-auth-session, expo-b
 
 ### Community 2 - "notifications.ts"
 Cohesion: 0.09
-Nodes (36): build_push_content(), Title + body for one push, built from a real event.      Shape: "📜 Accadde Ogg, spell_years(), AuthContext, AuthProvider(), AuthState, User, BRAND (+28 more)
+Nodes (37): build_push_content(), Title + body for one push, built from a real event.      Shape: "📜 Accadde Ogg, spell_years(), AuthContext, AuthProvider(), AuthState, readNotifPrefs(), User (+29 more)
 
 ### Community 3 - "expo"
 Cohesion: 0.05
@@ -102,11 +99,11 @@ Nodes (37): backgroundColor, foregroundImage, adaptiveIcon, edgeToEdgeEnabled, p
 
 ### Community 4 - "Accedi con Google — cosa devi fare tu (10 minuti, una volta sola)"
 Cohesion: 0.08
-Nodes (23): A) Web, Accedi con Google, B) Android, C) iOS, Come rifarlo da zero (se un giorno serve), ✅ GIÀ FATTO — le credenziali esistono (05/08/2026), In parole semplici, Note (+15 more)
+Nodes (23): A) Web, Accedi con Google — cosa devi fare tu (10 minuti, una volta sola), App (Render statico + build EAS), B) Android, Backend (Render), C) iOS, In parole semplici, Note (+15 more)
 
 ### Community 5 - "server.py"
-Cohesion: 0.08
-Nodes (20): auth_google_config(), auth_google_status(), _fetch_pageimage(), fetch_summary(), forgot_question(), ForgotQuestionBody, health(), push_register() (+12 more)
+Cohesion: 0.10
+Nodes (15): auth_google_status(), _fetch_pageimage(), fetch_summary(), forgot_question(), ForgotQuestionBody, health(), push_register(), push_unregister() (+7 more)
 
 ### Community 6 - "BaseModel"
 Cohesion: 0.13
@@ -117,7 +114,7 @@ Cohesion: 0.10
 Nodes (11): Test PATCH /auth/me updates language, country, notifications, Authentication endpoint tests, Test user registration with all fields including country, Test registration with existing email fails, Test login with correct credentials returns tokens and user, Test login with wrong password fails, Test login with non-existent email fails, Test GET /auth/me returns user data with valid Bearer token (+3 more)
 
 ### Community 8 - "send_daily_push"
-Cohesion: 0.14
+Cohesion: 0.13
 Nodes (20): events_teasers(), events_today(), _expo_send(), favorites(), get_merged_events(), load_user_interactions(), native_langs(), _pick_lang() (+12 more)
 
 ### Community 9 - "TestEvents"
@@ -125,16 +122,16 @@ Cohesion: 0.11
 Nodes (10): Event endpoints tests - fetching, filtering, multi-language, Test filtering for global events only, Test filtering for local events only, Test GET /events/categories returns category list, Test GET /events/today returns events with required fields, Test Italian user gets IT-relevant events, Test Spanish user gets ES-relevant events (different from IT), Test filtering events by category (+2 more)
 
 ### Community 10 - "package.json"
-Cohesion: 0.29
-Nodes (7): scripts, android, ios, lint, reset-project, start, web
+Cohesion: 0.11
+Nodes (18): devDependencies, @babel/core, eslint, eslint-config-expo, @types/react, typescript, main, name (+10 more)
 
 ### Community 11 - "build_merged_events"
-Cohesion: 0.09
-Nodes (22): build_merged_events(), categorize(), curate_people(), detect_country_relevance(), detect_subcategory(), _extract_image(), fetch_fame_and_italian(), fetch_wiki() (+14 more)
+Cohesion: 0.11
+Nodes (18): build_merged_events(), categorize(), detect_country_relevance(), detect_subcategory(), _extract_image(), fetch_wiki(), _norm_page_title(), _page_extract() (+10 more)
 
 ### Community 12 - "_daily_worker"
-Cohesion: 0.17
-Nodes (12): cron_daily(), cron_push(), purge_stale_cache(), Rebuild the cache for today and the next couple of days.      Notifications ar, Drop cache documents from previous formats and days nobody has opened., Authorise a cron call.      Prefer the header: anything in a query string ends, External daily trigger (GitHub Actions). Also wakes a sleeping instance., External trigger for the daily push round. (+4 more)
+Cohesion: 0.13
+Nodes (16): cron_daily(), cron_push(), _daily_worker(), _keepalive_ping(), purge_stale_cache(), Rebuild the cache for today and the next couple of days.      Notifications ar, Drop cache documents from previous formats and days nobody has opened., Ping our own public URL so the free instance never falls asleep.      A sleepi (+8 more)
 
 ### Community 13 - "TestInteractions"
 Cohesion: 0.12
@@ -149,8 +146,8 @@ Cohesion: 0.15
 Nodes (12): Accadde Oggi — Scheda Google Play (ASO + Neuromarketing), 🎨 ASSET GRAFICI (direzione di design), ✅ Checklist Play Console (per il rilascio interno), Descripción breve (≤80), Descripción completa (resumen), Descrizione breve (≤80 caratteri), Descrizione completa (≤4000 caratteri), 🇪🇸 ESPAÑOL (variante) (+4 more)
 
 ### Community 16 - "forgot_reset"
-Cohesion: 0.15
-Nodes (15): _daily_worker(), forgot_reset(), ForgotResetBody, hash_password(), hash_password_async(), _keepalive_ping(), Step 2 of password recovery — verify answer and reset password., Set or change security question (requires current password). (+7 more)
+Cohesion: 0.22
+Nodes (11): forgot_reset(), ForgotResetBody, hash_password(), hash_password_async(), Step 2 of password recovery — verify answer and reset password., Set or change security question (requires current password)., SecurityQuestionBody, startup() (+3 more)
 
 ### Community 17 - "Accadde Oggi — Handoff / Linea di lavoro"
 Cohesion: 0.18
@@ -193,8 +190,8 @@ Cohesion: 0.40
 Nodes (4): config, { FileStore }, { getDefaultConfig }, path
 
 ### Community 27 - "curate_people"
-Cohesion: 0.28
-Nodes (6): RootStack(), detectDeviceLang(), LangCtx, LanguageContext, LanguageProvider(), ThemeProvider()
+Cohesion: 0.50
+Nodes (4): curate_people(), fetch_fame_and_italian(), For each Wikidata item: how many Wikipedia editions carry it, and the     Itali, Keep the people worth a card, and give them Italian words.      Two problems s
 
 ### Community 29 - "router.d.ts"
 Cohesion: 0.50
@@ -204,20 +201,8 @@ Nodes (3): expo-router, ExpoRouter, __routes
 Cohesion: 0.67
 Nodes (3): gen(), _png(), Generate dark cinematic category background images (no external deps).  These re
 
-### Community 40 - "AnimatedTabBar.tsx"
-Cohesion: 0.25
-Nodes (6): AnimatedPressable, AnimatedTabBar(), ICONS, ItemProps, SPRING, styles
-
-### Community 41 - "package.json"
-Cohesion: 0.33
-Nodes (5): main, name, packageManager, private, version
-
-### Community 42 - "devDependencies"
-Cohesion: 0.33
-Nodes (6): devDependencies, @babel/core, eslint, eslint-config-expo, @types/react, typescript
-
 ## Knowledge Gaps
-- **204 isolated node(s):** `expo-router`, `ExpoRouter`, `__routes`, `name`, `slug` (+199 more)
+- **197 isolated node(s):** `expo-router`, `ExpoRouter`, `__routes`, `name`, `slug` (+192 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **6 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
@@ -225,16 +210,16 @@ Nodes (6): devDependencies, @babel/core, eslint, eslint-config-expo, @types/reac
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `build_push_content()` connect `notifications.ts` to `send_daily_push`, `server.py`?**
-  _High betweenness centrality (0.133) - this node is a cross-community bridge._
+  _High betweenness centrality (0.128) - this node is a cross-community bridge._
 - **Why does `dependencies` connect `dependencies` to `package.json`?**
   _High betweenness centrality (0.111) - this node is a cross-community bridge._
 - **Why does `EventCard()` connect `profile.tsx` to `dependencies`?**
-  _High betweenness centrality (0.104) - this node is a cross-community bridge._
+  _High betweenness centrality (0.103) - this node is a cross-community bridge._
 - **What connects `Public health check (no auth) — used by the host's health probe.`, `Return country codes that match keywords in the text.`, `Fetch every section of the "on this day" feed for one Wikipedia edition.` to the rest of the system?**
-  _284 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _275 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `profile.tsx` be split into smaller, more focused modules?**
-  _Cohesion score 0.05696969696969697 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.05265123226288275 - nodes in this community are weakly interconnected._
 - **Should `dependencies` be split into smaller, more focused modules?**
   _Cohesion score 0.045454545454545456 - nodes in this community are weakly interconnected._
 - **Should `notifications.ts` be split into smaller, more focused modules?**
-  _Cohesion score 0.09246088193456614 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.09041835357624832 - nodes in this community are weakly interconnected._
