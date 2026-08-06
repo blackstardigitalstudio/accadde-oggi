@@ -13,11 +13,19 @@ import api from "../../src/api/client";
 import { COLORS, categoryColor } from "../../src/theme";
 import { t, tp } from "../../src/i18n/translations";
 import { countryFlag } from "../../src/i18n/countries";
+import { subcatsFor, subLabel } from "../../src/i18n/interests";
 import { EventData } from "../../src/components/EventCard";
 import { eventImageSource } from "../../src/utils/categoryImages";
 
 const CATS = ["wars", "science", "culture", "sports", "politics"];
 const DECADES = [1900, 1920, 1940, 1950, 1960, 1970, 1980, 1990, 2000, 2010, 2020];
+
+type Kind = "event" | "birth" | "death";
+const KINDS: { id: Kind; icon: string; labelKey: "kindEvent" | "kindBirth" | "kindDeath" }[] = [
+  { id: "event", icon: "📜", labelKey: "kindEvent" },
+  { id: "birth", icon: "🎂", labelKey: "kindBirth" },
+  { id: "death", icon: "🕯️", labelKey: "kindDeath" },
+];
 
 export default function Explore() {
   const { user } = useAuth();
@@ -30,6 +38,8 @@ export default function Explore() {
     (typeof params.category === "string" && CATS.includes(params.category)) ? params.category : null
   );
   const [activeDecade, setActiveDecade] = useState<number | null>(null);
+  const [activeKind, setActiveKind] = useState<Kind | null>(null);
+  const [activeSub, setActiveSub] = useState<string | null>(null);
   const [activeScope, setActiveScope] = useState<"all" | "global" | "local">(
     (params.scope === "global" || params.scope === "local") ? params.scope : "all"
   );
@@ -39,9 +49,11 @@ export default function Explore() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const params: any = { limit: 50, scope: activeScope };
+      const params: any = { limit: 150, scope: activeScope };
       if (activeCat) params.category = activeCat;
       if (activeDecade !== null) params.decade = activeDecade;
+      if (activeKind) params.kind = activeKind;
+      if (activeSub) params.subcategory = activeSub;
       const { data } = await api.get("/events/today", { params });
       setEvents(data.events || []);
     } catch {
@@ -49,7 +61,13 @@ export default function Explore() {
     } finally {
       setLoading(false);
     }
-  }, [activeCat, activeDecade, activeScope]);
+  }, [activeCat, activeDecade, activeScope, activeKind, activeSub]);
+
+  /** Picking a new category invalidates whichever sub-genre was chosen under the old one. */
+  const pickCategory = (cat: string | null) => {
+    setActiveCat(cat);
+    setActiveSub(null);
+  };
 
   useEffect(() => { load(); }, [load]);
 
@@ -70,6 +88,38 @@ export default function Explore() {
             </Text>
           )}
         </View>
+
+        {/* What kind of story — the first thing to narrow down now that a day
+            carries events, births and deaths together. */}
+        <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>{t(lang, "filterKind").toUpperCase()}</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll} contentContainerStyle={{ paddingHorizontal: 24, gap: 8 }}>
+          <TouchableOpacity
+            testID="kind-all"
+            accessibilityRole="button"
+            accessibilityState={{ selected: activeKind === null }}
+            style={[styles.chip, { borderColor: colors.border }, activeKind === null && { backgroundColor: colors.textPrimary, borderColor: colors.textPrimary }]}
+            onPress={() => setActiveKind(null)}
+          >
+            <Text style={[styles.chipText, { color: colors.textSecondary }, activeKind === null && { color: colors.bg }]}>
+              {t(lang, "kindAll").toUpperCase()}
+            </Text>
+          </TouchableOpacity>
+          {KINDS.map((k) => (
+            <TouchableOpacity
+              key={k.id}
+              testID={`kind-${k.id}`}
+              accessibilityRole="button"
+              accessibilityState={{ selected: activeKind === k.id }}
+              style={[styles.chip, { borderColor: colors.border }, activeKind === k.id && { backgroundColor: colors.textPrimary, borderColor: colors.textPrimary }]}
+              onPress={() => setActiveKind(k.id)}
+            >
+              <Text style={{ fontSize: 13 }}>{k.icon}</Text>
+              <Text style={[styles.chipText, { color: colors.textSecondary }, activeKind === k.id && { color: colors.bg }]}>
+                {t(lang, k.labelKey).toUpperCase()}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
 
         <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>{t(lang, "scope").toUpperCase()}</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll} contentContainerStyle={{ paddingHorizontal: 24, gap: 8 }}>
@@ -100,12 +150,12 @@ export default function Explore() {
           </TouchableOpacity>
         </ScrollView>
 
-        <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>{t(lang, "allCategories").toUpperCase()}</Text>
+        <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>{t(lang, "filterCategory").toUpperCase()}</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll} contentContainerStyle={{ paddingHorizontal: 24, gap: 8 }}>
           <TouchableOpacity
             testID="cat-all"
             style={[styles.chip, { borderColor: colors.border }, activeCat === null && { backgroundColor: colors.textPrimary, borderColor: colors.textPrimary }]}
-            onPress={() => setActiveCat(null)}
+            onPress={() => pickCategory(null)}
           >
             <Text style={[styles.chipText, { color: colors.textSecondary }, activeCat === null && { color: colors.bg }]}>
               {t(lang, "allCategories").toUpperCase()}
@@ -120,7 +170,7 @@ export default function Explore() {
                 { borderColor: colors.border },
                 activeCat === c && { backgroundColor: categoryColor(c), borderColor: categoryColor(c) },
               ]}
-              onPress={() => setActiveCat(c)}
+              onPress={() => pickCategory(c)}
             >
               <Text style={[styles.chipText, { color: colors.textSecondary }, activeCat === c && { color: "#fff" }]}>
                 {t(lang, c as any).toUpperCase()}
@@ -128,6 +178,49 @@ export default function Explore() {
             </TouchableOpacity>
           ))}
         </ScrollView>
+
+        {/* Sub-genres appear only once a category is chosen: showing all 36 at
+            once would be a wall, and most of them are meaningless without their
+            parent. Pick "Scienza" and you get Spazio, Tecnologia, Aviazione… */}
+        {activeCat && subcatsFor(activeCat).length > 0 && (
+          <>
+            <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
+              {t(lang, "filterSubcategory").toUpperCase()}
+            </Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll} contentContainerStyle={{ paddingHorizontal: 24, gap: 8 }}>
+              <TouchableOpacity
+                testID="sub-all"
+                accessibilityRole="button"
+                accessibilityState={{ selected: activeSub === null }}
+                style={[styles.chip, { borderColor: colors.border }, activeSub === null && { backgroundColor: colors.textPrimary, borderColor: colors.textPrimary }]}
+                onPress={() => setActiveSub(null)}
+              >
+                <Text style={[styles.chipText, { color: colors.textSecondary }, activeSub === null && { color: colors.bg }]}>
+                  {t(lang, "allDecades").toUpperCase()}
+                </Text>
+              </TouchableOpacity>
+              {subcatsFor(activeCat).map((sub) => (
+                <TouchableOpacity
+                  key={sub.id}
+                  testID={`sub-${sub.id}`}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: activeSub === sub.id }}
+                  style={[
+                    styles.chip,
+                    { borderColor: colors.border },
+                    activeSub === sub.id && { backgroundColor: categoryColor(activeCat), borderColor: categoryColor(activeCat) },
+                  ]}
+                  onPress={() => setActiveSub(activeSub === sub.id ? null : sub.id)}
+                >
+                  <Text style={{ fontSize: 13 }}>{sub.icon}</Text>
+                  <Text style={[styles.chipText, { color: colors.textSecondary }, activeSub === sub.id && { color: "#fff" }]}>
+                    {subLabel(sub, lang).toUpperCase()}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </>
+        )}
 
         <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>{t(lang, "filterDecade").toUpperCase()}</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll} contentContainerStyle={{ paddingHorizontal: 24, gap: 8 }}>

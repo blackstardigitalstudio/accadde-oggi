@@ -14,6 +14,7 @@ import { COLORS } from "../../src/theme";
 import { t, T } from "../../src/i18n/translations";
 import { HERO_IMAGES } from "../../src/utils/categoryImages";
 import MadeInItaly from "../../src/components/MadeInItaly";
+import GoogleSignInButton, { useGoogleConfig, googleDividerStyles } from "../../src/components/GoogleSignInButton";
 
 const DEMO_EMAIL = "demo@accaddeoggi.app";
 const DEMO_PASSWORD = "Demo1234";
@@ -29,6 +30,9 @@ export default function Login() {
   const [imgIdx, setImgIdx] = useState(0);
   const fade = useRef(new Animated.Value(1)).current;
   const { lang, setLang } = useLang();
+  // Client IDs come from the backend, so this build can start offering Google
+  // sign-in the day it is configured there — without a new release.
+  const googleConfig = useGoogleConfig();
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -119,7 +123,27 @@ export default function Login() {
             </View>
 
             <View style={styles.form}>
-              <Text style={styles.label}>{T[lang].email.toUpperCase()}</Text>
+              {/* Fastest way in: one tap, nothing to type or remember. */}
+              {googleConfig && (
+                <>
+                  <GoogleSignInButton
+                    lang={lang}
+                    config={googleConfig}
+                    onSuccess={() => router.replace("/(tabs)")}
+                    onError={setErr}
+                    disabled={loading}
+                  />
+                  <View style={googleDividerStyles.row}>
+                    <View style={googleDividerStyles.line} />
+                    <Text style={googleDividerStyles.text}>
+                      {t(lang, "orWithEmail").toUpperCase()}
+                    </Text>
+                    <View style={googleDividerStyles.line} />
+                  </View>
+                </>
+              )}
+
+              <Text style={[styles.label, !!googleConfig && { marginTop: 20 }]}>{T[lang].email.toUpperCase()}</Text>
               <TextInput
                 testID="login-email-input"
                 value={email}

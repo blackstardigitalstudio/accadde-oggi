@@ -2,10 +2,32 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import api, { ACCESS_KEY, REFRESH_KEY } from "../api/client";
 import { Lang } from "../i18n/translations";
-import { scheduleRandomDailyNotifications, getScheduledInfo } from "../services/notifications";
+import {
+  scheduleRandomDailyNotifications,
+  getScheduledInfo,
+  registerPushToken,
+  INTENSITY_PER_DAY,
+  Intensity,
+  Window,
+  SCHEDULE_DAYS,
+} from "../services/notifications";
 
 const USER_CACHE_KEY = "accadde:user";
 const LANG_KEY = "accadde:lang";  // keep in sync with LanguageContext
+export const NOTIF_WINDOW_KEY = "accadde:notifWindow";
+export const NOTIF_INTENSITY_KEY = "accadde:notifIntensity";
+
+/** The user's saved notification preferences, with sensible defaults. */
+export async function readNotifPrefs(): Promise<{ window: Window; intensity: Intensity }> {
+  const [w, i] = await Promise.all([
+    AsyncStorage.getItem(NOTIF_WINDOW_KEY),
+    AsyncStorage.getItem(NOTIF_INTENSITY_KEY),
+  ]);
+  return {
+    window: (w as Window) || "random",
+    intensity: (i as Intensity) || "normal",
+  };
+}
 
 export type User = {
   id: string;
@@ -17,12 +39,15 @@ export type User = {
   interests: string[];
   notifications_enabled: boolean;
   has_security_question?: boolean;
+  auth_provider?: "password" | "google";
+  has_password?: boolean;
   created_at?: string;
 };
 
 type AuthState = {
   user: User | null | undefined; // undefined = loading
   login: (email: string, password: string) => Promise<void>;
+  loginWithGoogle: (idToken: string, language: Lang, country: string) => Promise<boolean>;
   register: (
     email: string, password: string, name: string, language: Lang, country: string,
     security_question?: string, security_answer?: string
@@ -38,13 +63,23 @@ const AuthContext = createContext<AuthState | null>(null);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null | undefined>(undefined);
 
-  const ensureNotificationsScheduled = async (lang: Lang) => {
+  /**
+   * Top the notification queue back up.
+   *
+   * Local schedules are finite (and iOS only keeps the 64 soonest), so every
+   * launch is a chance to refill them with the days ahead. The server push is
+   * the backstop for someone who never opens the app at all.
+   */
+  const ensureNotificationsScheduled = async (lang: Lang, country?: string) => {
     try {
+      const { window, intensity } = await readNotifPrefs();
+      const perDay = INTENSITY_PER_DAY[intensity];
       const info = await getScheduledInfo();
-      // Only (re)schedule if nothing is queued yet — avoids thrashing
-      if (info.count < 5) {
-        await scheduleRandomDailyNotifications("random", lang, 30, 3);
+      // Refill when the queue is running low rather than on every single launch.
+      if (info.count < perDay * 3) {
+        await scheduleRandomDailyNotifications(window, lang, SCHEDULE_DAYS, perDay);
       }
+      registerPushToken(lang, country);
     } catch {}
   };
 
@@ -67,7 +102,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(data);
       await AsyncStorage.setItem(USER_CACHE_KEY, JSON.stringify(data));
       if (data?.notifications_enabled) {
-        ensureNotificationsScheduled(data.language || "it");
+        ensureNotificationsScheduled(data.language || "it", data.country);
       }
     } catch (e: any) {
       // Only log out on explicit auth errors (401/403). For network errors, keep the cached user.
@@ -92,8 +127,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await AsyncStorage.setItem(REFRESH_KEY, refresh);
   };
 
-  const login = async (email: string, password: string) => {
-    const { data } = await api.post("/auth/login", { email, password });
+  /** Shared tail of every successful sign-in. */
+  const applySession = async (data: any) => {
     await persistTokens(data.access_token, data.refresh_token);
     setUser(data.user);
     await AsyncStorage.setItem(USER_CACHE_KEY, JSON.stringify(data.user));
@@ -102,8 +137,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await AsyncStorage.setItem(LANG_KEY, data.user.language);
     }
     if (data.user?.notifications_enabled) {
-      scheduleRandomDailyNotifications("random", data.user.language || "it", 30, 3);
+      const { window, intensity } = await readNotifPrefs();
+      scheduleRandomDailyNotifications(
+        window, data.user.language || "it", SCHEDULE_DAYS, INTENSITY_PER_DAY[intensity]
+      );
+      registerPushToken(data.user.language || "it", data.user.country);
     }
+  };
+
+  const login = async (email: string, password: string) => {
+    const { data } = await api.post("/auth/login", { email, password });
+    await applySession(data);
+  };
+
+  const loginWithGoogle = async (idToken: string, language: Lang, country: string) => {
+    const { data } = await api.post("/auth/google", {
+      id_token: idToken,
+      language,
+      country,
+    });
+    await applySession(data);
+    return data.created as boolean;
   };
 
   const register = async (
@@ -116,13 +170,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       payload.security_answer = security_answer;
     }
     const { data } = await api.post("/auth/register", payload);
-    await persistTokens(data.access_token, data.refresh_token);
-    setUser(data.user);
-    await AsyncStorage.setItem(USER_CACHE_KEY, JSON.stringify(data.user));
-    // Default ON after registration - 3 notifications per day with random times
-    if (data.user?.notifications_enabled) {
-      scheduleRandomDailyNotifications("random", language, 30, 3);
-    }
+    await applySession(data);
   };
 
   const logout = async () => {
@@ -144,7 +192,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, register, logout, updateUser, setLanguage, refreshMe: loadMe }}>
+    <AuthContext.Provider value={{ user, login, loginWithGoogle, register, logout, updateUser, setLanguage, refreshMe: loadMe }}>
       {children}
     </AuthContext.Provider>
   );

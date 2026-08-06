@@ -6,6 +6,8 @@ load_dotenv(ROOT_DIR / ".env")
 
 import os
 import re
+import hashlib
+import hmac
 import logging
 import asyncio
 from datetime import datetime, timezone, timedelta
@@ -14,7 +16,7 @@ from typing import List, Optional, Literal
 import bcrypt
 import jwt
 import httpx
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Query, Header
 from fastapi.responses import Response, StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.middleware.cors import CORSMiddleware
@@ -38,6 +40,33 @@ REFRESH_TOKEN_DAYS = 365                # 1 year
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
 
+# Bump when the cached event shape changes, so old documents are never served.
+CACHE_VERSION = "merged-v2"
+# Shared secret for the external daily trigger (GitHub Actions / uptime pinger).
+CRON_SECRET = os.environ.get("CRON_SECRET", "")
+# Public URL of this service — used for the keep-alive ping that stops the free
+# Render instance from going to sleep (and cold-starting on the user).
+SELF_URL = os.environ.get("SELF_URL", "").rstrip("/")
+# Google OAuth client IDs, one per platform.
+#
+# These are handed to the app at runtime rather than compiled into it: an OAuth
+# client ID is public by design (it travels in every authorisation URL), and
+# serving it means the published build starts offering Google sign-in the moment
+# these are filled in — no new build, no new store review.
+GOOGLE_WEB_CLIENT_ID = os.environ.get("GOOGLE_WEB_CLIENT_ID", "").strip()
+GOOGLE_ANDROID_CLIENT_ID = os.environ.get("GOOGLE_ANDROID_CLIENT_ID", "").strip()
+GOOGLE_IOS_CLIENT_ID = os.environ.get("GOOGLE_IOS_CLIENT_ID", "").strip()
+
+# Every audience we accept on an incoming token: the three above, plus anything
+# extra listed in GOOGLE_CLIENT_IDS (a second Android client for Play App
+# Signing, for instance).
+GOOGLE_CLIENT_IDS = [
+    c for c in (
+        [GOOGLE_WEB_CLIENT_ID, GOOGLE_ANDROID_CLIENT_ID, GOOGLE_IOS_CLIENT_ID]
+        + [c.strip() for c in os.environ.get("GOOGLE_CLIENT_IDS", "").split(",")]
+    ) if c and c.strip()
+]
+
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
 
@@ -57,8 +86,15 @@ logger = logging.getLogger("accadde-oggi")
 # ============================================================
 # AUTH HELPERS
 # ============================================================
+# bcrypt cost factor. Every extra round doubles the time, and on the free tier's
+# shared CPU the old default (12) cost roughly a second per sign-up — most of the
+# wait people felt. 10 rounds is the long-standing bcrypt default and still far
+# beyond brute-force reach; raise it here if the instance ever gets real cores.
+BCRYPT_ROUNDS = int(os.environ.get("BCRYPT_ROUNDS", "10"))
+
+
 def hash_password(pw: str) -> str:
-    return bcrypt.hashpw(pw.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    return bcrypt.hashpw(pw.encode("utf-8"), bcrypt.gensalt(rounds=BCRYPT_ROUNDS)).decode("utf-8")
 
 
 def verify_password(pw: str, hashed: str) -> bool:
@@ -66,6 +102,17 @@ def verify_password(pw: str, hashed: str) -> bool:
         return bcrypt.checkpw(pw.encode("utf-8"), hashed.encode("utf-8"))
     except Exception:
         return False
+
+
+# bcrypt is deliberately slow and fully synchronous: called directly it freezes
+# the event loop, so one person signing up stalls everybody else. These run it on
+# a worker thread instead.
+async def hash_password_async(pw: str) -> str:
+    return await asyncio.to_thread(hash_password, pw)
+
+
+async def verify_password_async(pw: str, hashed: str) -> bool:
+    return await asyncio.to_thread(verify_password, pw, hashed)
 
 
 def create_access_token(user_id: str, email: str) -> str:
@@ -93,6 +140,8 @@ def user_public(user: dict) -> dict:
         "interests": user.get("interests", []),
         "notifications_enabled": user.get("notifications_enabled", True),
         "has_security_question": bool(user.get("security_question")),
+        "auth_provider": user.get("auth_provider", "password"),
+        "has_password": bool(user.get("password_hash")),
         "created_at": user.get("created_at").isoformat() if user.get("created_at") else None,
     }
 
@@ -146,6 +195,13 @@ class LoginBody(BaseModel):
 
 class RefreshBody(BaseModel):
     refresh_token: str
+
+
+class GoogleAuthBody(BaseModel):
+    id_token: str = Field(min_length=20)
+    name: Optional[str] = ""
+    language: Optional[Literal["it", "en", "es"]] = "it"
+    country: Optional[str] = "IT"
 
 
 class ForgotQuestionBody(BaseModel):
@@ -213,6 +269,10 @@ SUBCATEGORY_KEYWORDS = {
                      "guerra fría", "soviético"],
         "revolutions": ["revolution", "uprising", "rivoluzion", "rivolta", "revolución", "rebelión"],
         "civil_wars": ["civil war", "guerra civile", "guerra civil"],
+        "terrorism": ["terror", "attentat", "bomb attack", "hijack", "strage",
+                      "attentato", "dirottamento", "atentado", "secuestro aéreo"],
+        "independence": ["independence", "indipendenza", "independencia",
+                         "liberation", "liberazione", "liberación"],
     },
     "science": {
         "space": ["space", "moon", "mars", "nasa", "rocket", "satellite", "spacecraft", "astronaut",
@@ -231,6 +291,15 @@ SUBCATEGORY_KEYWORDS = {
         "technology": ["computer", "internet", "software", "microchip", "apple", "microsoft",
                        "google", "ibm", "tesla", "ai", "algorithm",
                        "computadora", "algoritmo"],
+        "aviation": ["aircraft", "airplane", "flight", "aviation", "airline", "pilot",
+                     "aereo", "volo", "aviazione", "pilota",
+                     "avión", "vuelo", "aviación", "piloto"],
+        "environment": ["climate", "earthquake", "volcano", "hurricane", "flood", "tsunami",
+                        "clima", "terremoto", "vulcano", "uragano", "alluvione",
+                        "huracán", "inundación", "medio ambiente"],
+        "inventions": ["invent", "patent", "prototype", "first ever",
+                       "invenzione", "brevetto", "prototipo",
+                       "invención", "patente", "prototipo"],
     },
     "culture": {
         "cinema": ["film", "movie", "director", "cinema", "oscar", "hollywood", "premier",
@@ -246,6 +315,11 @@ SUBCATEGORY_KEYWORDS = {
                 "pittur", "scultura", "artista", "mostra", "gallerie", "museo",
                 "pintura", "escultura", "artista", "exposición", "galería", "museo"],
         "fashion": ["fashion", "design", "couture", "moda", "stilista", "diseñador"],
+        "television": ["television", "tv ", "broadcast", "series", "sitcom",
+                       "televisione", "trasmissione", "serie tv",
+                       "televisión", "emisión", "serie"],
+        "theatre": ["theatre", "theater", "opera house", "ballet", "playwright",
+                    "teatro", "balletto", "drammaturgo", "ballet"],
     },
     "sports": {
         "football": ["football", "soccer", "fifa", "world cup", "premier league",
@@ -258,6 +332,9 @@ SUBCATEGORY_KEYWORDS = {
         "cycling": ["cycling", "tour de france", "giro d'italia", "vuelta",
                     "ciclismo", "ciclista"],
         "boxing": ["boxing", "heavyweight", "knockout", "pugilato", "boxeo"],
+        "basketball": ["basketball", "nba", "pallacanestro", "baloncesto"],
+        "athletics": ["athletics", "marathon", "sprint", "record",
+                      "atletica", "maratona", "atletismo", "maratón"],
     },
     "politics": {
         "elections": ["elect", "ballot", "campaign", "vote", "elezion", "campagna elettorale",
@@ -271,6 +348,9 @@ SUBCATEGORY_KEYWORDS = {
         "assassinations": ["assassin", "murder", "killed", "shot", "died",
                            "assassin", "ucciso", "morte",
                            "asesinat", "muerto", "asesinad"],
+        "human_rights": ["rights", "slavery", "suffrage", "apartheid", "equality",
+                         "diritti", "schiavitù", "suffragio", "uguaglianza",
+                         "derechos", "esclavitud", "sufragio", "igualdad"],
     },
 }
 
@@ -344,20 +424,57 @@ def detect_country_relevance(text: str) -> List[str]:
 # ============================================================
 WIKI_LANGS = ["it", "en", "es"]  # all editions we pull from
 
+# Sections of the Wikimedia "onthisday/all" feed we ingest.
+# 'selected' is a curated subset of 'events': it lands in the same buckets, so it
+# never duplicates anything — it only marks what an edition chose to highlight.
+# 'holidays' is deliberately skipped: those entries carry no year, and the whole
+# UI is built around "N anni fa".
+WIKI_SECTIONS = {
+    "events": "event",
+    "selected": "event",
+    "births": "birth",
+    "deaths": "death",
+}
+EVENT_KINDS = ("event", "birth", "death")
 
-async def fetch_wiki(lang: str, month: int, day: int) -> List[dict]:
-    url = f"https://api.wikimedia.org/feed/v1/wikipedia/{lang}/onthisday/events/{month:02d}/{day:02d}"
+# Language fallback chain. Italian and Spanish readers get the other Romance
+# edition before English: far more readable for them when their own edition
+# doesn't carry the entry (it.wikipedia, for instance, publishes no births/deaths).
+LANG_FALLBACK = {
+    "it": ["it", "es", "en"],
+    "es": ["es", "it", "en"],
+    "en": ["en", "es", "it"],
+}
+
+# Long-form summary cap (keeps a full day of events comfortably inside one
+# MongoDB document and inside the Atlas free tier).
+EXTRACT_MAX = 600
+
+
+async def fetch_wiki(lang: str, month: int, day: int) -> List[tuple]:
+    """Fetch every section of the "on this day" feed for one Wikipedia edition.
+
+    Returns a flat list of (kind, raw_item): a single request now feeds events,
+    featured events, births and deaths at once.
+    """
+    url = f"https://api.wikimedia.org/feed/v1/wikipedia/{lang}/onthisday/all/{month:02d}/{day:02d}"
     ua = "AccaddeOggi/1.0 (https://accaddeoggi.app; contact@accaddeoggi.app)"
     try:
-        async with httpx.AsyncClient(timeout=20.0) as hc:
+        async with httpx.AsyncClient(timeout=30.0) as hc:
             r = await hc.get(url, headers={"User-Agent": ua, "Api-User-Agent": ua, "Accept": "application/json"})
             if r.status_code != 200:
                 logger.warning(f"Wiki {lang} {r.status_code}")
                 return []
-            return r.json().get("events", [])
+            payload = r.json()
     except Exception as e:
         logger.error(f"Wiki fetch error ({lang}): {e}")
         return []
+
+    out: List[tuple] = []
+    for section, kind in WIKI_SECTIONS.items():
+        for item in (payload.get(section) or []):
+            out.append((kind, item))
+    return out
 
 
 def _norm_page_title(raw: dict) -> str:
@@ -445,43 +562,239 @@ def _wiki_url(raw: dict) -> Optional[str]:
     return (pages[0].get("content_urls", {}) or {}).get("desktop", {}).get("page")
 
 
-async def get_merged_events(month: int, day: int, primary_lang: str) -> List[dict]:
-    """
-    Fetch events from all Wikipedia editions we support (IT/EN/ES) in parallel.
-    Merge events by (year + wikibase_item) so that an event appearing in
-    multiple languages is tagged `global` (+1 per extra edition).
-    Return events tagged with: scope, sources, countries.
-    Text/title prefers the user's primary language, falling back to EN then ES.
-    """
-    cache_key = f"merged-{month:02d}-{day:02d}"
-    cached = await db.events_cache.find_one({"_id": cache_key})
-    today = datetime.now(timezone.utc).date()
-    if cached and cached.get("cached_at") and cached["cached_at"].date() == today:
-        return cached["events"]
+def _page_extract(raw: dict) -> str:
+    """Opening summary of the linked Wikipedia article.
 
+    The feed's own `text` is one sentence; this is the real substance behind it
+    and is what the card shows under "approfondimento".
+    """
+    for p in (raw.get("pages") or []):
+        extract = (p.get("extract") or "").strip().replace("\n", " ")
+        if len(extract) > 40:
+            if len(extract) <= EXTRACT_MAX:
+                return extract
+            cut = extract[:EXTRACT_MAX]
+            dot = cut.rfind(". ")
+            return (cut[: dot + 1] if dot > EXTRACT_MAX * 0.5 else cut.rstrip() + "…")
+    return ""
+
+
+def _stable_id(kind: str, year: int, marker: str) -> str:
+    """Deterministic event id.
+
+    Python's builtin hash() is salted per process, so ids used to change at every
+    restart and saved favourites stopped matching. An md5 digest is stable forever.
+    """
+    digest = hashlib.md5(f"{kind}|{year}|{marker}".encode("utf-8")).hexdigest()[:10]
+    return f"evt-{year}-{digest}"
+
+
+# How many Wikipedia editions a person must appear in to earn a card.
+# It is the best free proxy for "would anyone recognise this name?": a household
+# name is in a hundred languages, a promising under-21 footballer is in two.
+# Wikipedia's own daily list is exhaustive, not curated — this is the curation.
+FAME_MIN = int(os.environ.get("FAME_MIN", "30"))
+WIKIDATA_API = "https://www.wikidata.org/w/api.php"
+WIKI_UA = "AccaddeOggi/1.0 (https://accaddeoggi.app; contact@accaddeoggi.app)"
+
+
+async def fetch_fame_and_italian(qids: List[str]) -> dict:
+    """For each Wikidata item: how many Wikipedia editions carry it, and the
+    Italian/Spanish article titles if they exist.
+
+    Batched 50 at a time, so a whole day of people costs a handful of requests.
+    """
+    out: dict = {}
+    if not qids:
+        return out
+    unique = list(dict.fromkeys(qids))  # same person can appear from two editions
+    async with httpx.AsyncClient(timeout=40.0) as hc:
+        for i in range(0, len(unique), 50):
+            batch = unique[i: i + 50]
+            entities = None
+            # Wikimedia throttles bursts. Back off and retry rather than treat a
+            # 429 as "nobody here is famous" — that answer would be a lie.
+            for attempt in range(4):
+                try:
+                    r = await hc.get(
+                        WIKIDATA_API,
+                        params={"action": "wbgetentities", "format": "json",
+                                "ids": "|".join(batch), "props": "sitelinks"},
+                        headers={"User-Agent": WIKI_UA, "Accept": "application/json"},
+                    )
+                except Exception as e:
+                    logger.warning(f"Wikidata batch error: {e}")
+                    await asyncio.sleep(1.5 * (attempt + 1))
+                    continue
+                if r.status_code == 200:
+                    entities = (r.json().get("entities") or {})
+                    break
+                if r.status_code in (429, 503):
+                    wait = float(r.headers.get("Retry-After") or (2 * (attempt + 1)))
+                    logger.info(f"Wikidata throttled us ({r.status_code}); waiting {wait:.0f}s")
+                    await asyncio.sleep(min(wait, 20))
+                    continue
+                # Never swallow this silently: an unnoticed failure here used to
+                # look exactly like "nobody was famous today".
+                logger.warning(f"Wikidata HTTP {r.status_code} on batch {i // 50}: {r.text[:160]}")
+                break
+            if entities is None:
+                continue
+            # Stay a polite neighbour between batches.
+            await asyncio.sleep(0.4)
+            for qid, ent in entities.items():
+                links = ent.get("sitelinks") or {}
+                out[qid] = {
+                    "fame": len(links),
+                    "it": (links.get("itwiki") or {}).get("title"),
+                    "es": (links.get("eswiki") or {}).get("title"),
+                }
+    return out
+
+
+async def fetch_summary(lang: str, title: str) -> Optional[dict]:
+    """Opening summary of one Wikipedia article, in a given language."""
+    if not title:
+        return None
+    from urllib.parse import quote
+    url = f"https://{lang}.wikipedia.org/api/rest_v1/page/summary/{quote(title, safe='')}"
+    try:
+        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as hc:
+            r = await hc.get(url, headers={"User-Agent": WIKI_UA, "Accept": "application/json"})
+            if r.status_code != 200:
+                return None
+            d = r.json()
+    except Exception:
+        return None
+    extract = (d.get("extract") or "").strip().replace("\n", " ")
+    if not extract:
+        return None
+    if len(extract) > EXTRACT_MAX:
+        cut = extract[:EXTRACT_MAX]
+        dot = cut.rfind(". ")
+        extract = cut[: dot + 1] if dot > EXTRACT_MAX * 0.5 else cut.rstrip() + "…"
+    return {
+        "title": d.get("titles", {}).get("normalized") or d.get("title") or title,
+        "extract": extract,
+        "description": (d.get("description") or "").strip(),
+        "url": (d.get("content_urls", {}) or {}).get("desktop", {}).get("page"),
+        "image": (d.get("thumbnail") or {}).get("source"),
+    }
+
+
+async def curate_people(final: List[dict]) -> List[dict]:
+    """Keep the people worth a card, and give them Italian words.
+
+    Two problems solved in one pass, because one Wikidata call answers both:
+      1. Wikipedia lists every single person born on a date — hundreds, mostly
+         unknown. We keep the ones the world actually knows.
+      2. it.wikipedia publishes no births/deaths, so those entries arrived in
+         Spanish or English. For the ones we keep, we go and fetch the real
+         Italian article.
+    """
+    people = [e for e in final if e["kind"] in ("birth", "death")]
+    others = [e for e in final if e["kind"] not in ("birth", "death")]
+    if not people:
+        return final
+
+    with_qid = [e for e in people if e.get("qid")]
+    fame = await fetch_fame_and_italian([e["qid"] for e in with_qid])
+
+    # Fail open. If Wikidata is unreachable we have no idea who is famous, and
+    # "no idea" must never turn into "delete everyone" — that would silently
+    # empty the app on the day their API has a bad hour.
+    if not fame:
+        logger.warning("Wikidata gave nothing back: keeping every person, uncurated")
+        return final
+
+    kept: List[dict] = []
+    for e in with_qid:
+        info = fame.get(e["qid"])
+        if info is None:
+            # This particular item is unknown to us; keep it rather than guess.
+            kept.append(e)
+            continue
+        if info["fame"] < FAME_MIN:
+            continue
+        e["fame"] = info["fame"]
+        e["_it_title"] = info.get("it")
+        e["_es_title"] = info.get("es")
+        kept.append(e)
+
+    # Fill in the Italian (and Spanish) words for the ones we kept.
+    gate = asyncio.Semaphore(6)
+
+    async def _localise(entry: dict):
+        async with gate:
+            for lg in ("it", "es"):
+                # Already native in this language? Nothing to do.
+                if lg in entry["sources"]:
+                    continue
+                title = entry.get(f"_{lg}_title")
+                if not title:
+                    continue
+                summary = await fetch_summary(lg, title)
+                if not summary:
+                    continue
+                lead = summary["description"] or summary["extract"].split(". ")[0]
+                entry["title_by_lang"][lg] = summary["title"]
+                entry["text_by_lang"][lg] = f"{summary['title']}, {lead}".strip(" ,")
+                entry["extract_by_lang"][lg] = summary["extract"]
+                entry["wiki_urls"][lg] = summary["url"]
+                if not entry.get("image_url") and summary.get("image"):
+                    entry["image_url"] = summary["image"]
+                entry.setdefault("native_langs", list(entry["sources"]))
+                entry["native_langs"].append(lg)
+
+    await asyncio.gather(*[_localise(e) for e in kept])
+
+    for e in kept:
+        e.pop("_it_title", None)
+        e.pop("_es_title", None)
+
+    logger.info(
+        f"Curated people: {len(people)} -> {len(kept)} (soglia fama {FAME_MIN}), "
+        f"con testo italiano: {sum(1 for e in kept if 'it' in (e.get('native_langs') or e['sources']))}"
+    )
+    return others + kept
+
+
+async def build_merged_events(month: int, day: int) -> List[dict]:
+    """Fetch and merge one calendar day from every Wikipedia edition we support.
+
+    Each edition contributes events, featured events, births and deaths. Entries
+    are bucketed by (kind + year + wikibase item), so the same fact told by three
+    editions becomes one card tagged `global`; a fact only one edition carries
+    stays `local`.
+    """
     results = await asyncio.gather(*[fetch_wiki(lg, month, day) for lg in WIKI_LANGS])
     by_lang = dict(zip(WIKI_LANGS, results))
 
-    # Bucket: key = (year, wikibase_id or normalized title)
+    # Bucket: key = (kind, year, wikibase_id or normalized title)
     merged: dict = {}
-    for lang, events in by_lang.items():
-        for ev in events:
+    for lang, items in by_lang.items():
+        for kind, ev in items:
             year = ev.get("year")
             text = ev.get("text", "")
             if not year or not text:
                 continue
             wb = _wikibase_id(ev)
-            key = (int(year), wb) if wb else (int(year), _norm_page_title(ev) or text[:40].lower())
+            marker = wb or _norm_page_title(ev) or text[:40].lower()
+            key = (kind, int(year), marker)
             bucket = merged.get(key)
             if not bucket:
                 merged[key] = {
+                    "kind": kind,
                     "year": int(year),
+                    "qid": wb,
                     "per_lang": {lang: ev},
                     "image_url": _extract_image(ev),
                     "wiki_urls": {lang: _wiki_url(ev)},
                 }
             else:
                 bucket["per_lang"][lang] = ev
+                if not bucket["qid"]:
+                    bucket["qid"] = wb
                 if not bucket["image_url"]:
                     bucket["image_url"] = _extract_image(ev)
                 bucket["wiki_urls"][lang] = _wiki_url(ev)
@@ -490,21 +803,28 @@ async def get_merged_events(month: int, day: int, primary_lang: str) -> List[dic
     final: List[dict] = []
 
     for key, b in merged.items():
+        kind, year, marker = key
         per_lang = b["per_lang"]
         sources = list(per_lang.keys())
         # Scope: global if present in 2+ editions, otherwise local
         scope = "global" if len(sources) >= 2 else "local"
 
-        # Pick best text for each user language: fallback chain
+        # Store each language's text under ITS OWN key, and only that.
+        #
+        # This used to run the fallback chain here and write, say, the Spanish
+        # sentence into text_by_lang["it"]. Everything downstream then believed
+        # it was holding Italian, and Italian readers got Spanish cards that
+        # claimed to be Italian. The fallback belongs at display time, where it
+        # can be seen and labelled — never baked into the stored data.
         text_by_lang = {}
         title_by_lang = {}
-        for ul in ("it", "en", "es"):
-            chosen = per_lang.get(ul) or per_lang.get("en") or per_lang.get("it") or per_lang.get("es")
-            if chosen:
-                pages = chosen.get("pages") or []
-                page_title = (pages[0].get("normalizedtitle") or pages[0].get("title")) if pages else None
-                text_by_lang[ul] = chosen.get("text", "")
-                title_by_lang[ul] = page_title or chosen.get("text", "").split(".")[0][:80]
+        extract_by_lang = {}
+        for lang_code, raw in per_lang.items():
+            pages = raw.get("pages") or []
+            page_title = (pages[0].get("normalizedtitle") or pages[0].get("title")) if pages else None
+            text_by_lang[lang_code] = raw.get("text", "")
+            title_by_lang[lang_code] = page_title or raw.get("text", "").split(".")[0][:80]
+            extract_by_lang[lang_code] = _page_extract(raw)
 
         # Country relevance detected from any language text
         all_text = " ".join(text_by_lang.values()) + " " + " ".join([str(t) for t in title_by_lang.values()])
@@ -520,18 +840,22 @@ async def get_merged_events(month: int, day: int, primary_lang: str) -> List[dic
             origin = countries[0]
 
         category = categorize(all_text)
-        stable_id = f"evt-{key[0]}-{abs(hash(str(key))) % 10000000}"
-        years_ago = current_year - int(key[0])
+        subcategory = detect_subcategory(all_text, category)
+        years_ago = current_year - year
 
         entry = {
-            "id": stable_id,
-            "year": int(key[0]),
+            "id": _stable_id(kind, year, marker),
+            "kind": kind,            # 'event' | 'birth' | 'death'
+            "qid": b.get("qid"),     # Wikidata item — used to rank fame and find the Italian page
+            "year": year,
             "years_ago": years_ago,
             "text_by_lang": text_by_lang,
             "title_by_lang": title_by_lang,
+            "extract_by_lang": extract_by_lang,
             "image_url": b["image_url"],
             "wiki_urls": b["wiki_urls"],
             "category": category,
+            "subcategory": subcategory,
             "scope": scope,          # 'global' | 'local'
             "sources": sources,      # wiki editions
             "countries": countries,  # countries mentioned in text
@@ -554,42 +878,110 @@ async def get_merged_events(month: int, day: int, primary_lang: str) -> List[dic
 
         final.append(entry)
 
-    # Second-tier image fallback: for events whose inline onthisday pages had no
-    # usable image, query the Action API pageimages (free, no key) concurrently.
+    # Curate BEFORE chasing images. Wikipedia's daily list of people is
+    # exhaustive, not curated: keep the ones anyone would recognise and give them
+    # Italian words. Doing it first also means the image lookups below run for
+    # ~150 survivors instead of ~500 — the burst that was getting us rate-limited.
+    final = await curate_people(final)
+
+    # Second-tier image fallback: for entries whose inline onthisday pages had no
+    # usable image, query the Action API pageimages (free, no key). A few at a
+    # time — Wikimedia throttles bursts, and it is their gift we are spending.
     image_less = [e for e in final if not e.get("image_url") and e.get("_img_fallback")]
     if image_less:
-        fetched = await asyncio.gather(
-            *[_fetch_pageimage(e["_img_fallback"][0], e["_img_fallback"][1]) for e in image_less]
-        )
+        gate = asyncio.Semaphore(4)
+
+        async def _lookup(entry: dict):
+            async with gate:
+                return await _fetch_pageimage(entry["_img_fallback"][0], entry["_img_fallback"][1])
+
+        fetched = await asyncio.gather(*[_lookup(e) for e in image_less])
         for e, src in zip(image_less, fetched):
             if src:
                 e["image_url"] = src
     for e in final:
         e.pop("_img_fallback", None)
 
-    # Cache
+    return final
+
+
+async def refresh_day_cache(month: int, day: int) -> int:
+    """Rebuild and store the cache for one calendar day. Returns the event count."""
+    events = await build_merged_events(month, day)
+    if not events:
+        # Never overwrite a good cache with an empty fetch (Wikipedia hiccup).
+        logger.warning(f"Refresh {month:02d}-{day:02d} returned 0 events — cache left untouched")
+        return 0
     await db.events_cache.update_one(
-        {"_id": cache_key},
-        {"$set": {"events": final, "cached_at": datetime.now(timezone.utc)}},
+        {"_id": f"{CACHE_VERSION}-{month:02d}-{day:02d}"},
+        {"$set": {"events": events, "cached_at": datetime.now(timezone.utc)}},
         upsert=True,
     )
-    return final
+    logger.info(f"Cache refreshed {month:02d}-{day:02d}: {len(events)} events")
+    return len(events)
+
+
+async def get_merged_events(month: int, day: int, primary_lang: str) -> List[dict]:
+    """Cached accessor. The daily worker keeps this warm, so users rarely wait."""
+    cache_key = f"{CACHE_VERSION}-{month:02d}-{day:02d}"
+    cached = await db.events_cache.find_one({"_id": cache_key})
+    today = datetime.now(timezone.utc).date()
+    if cached and cached.get("cached_at") and cached["cached_at"].date() == today:
+        return cached["events"]
+
+    events = await build_merged_events(month, day)
+    if not events:
+        # Fall back to yesterday's cache rather than showing an empty app.
+        return cached["events"] if cached else []
+
+    await db.events_cache.update_one(
+        {"_id": cache_key},
+        {"$set": {"events": events, "cached_at": datetime.now(timezone.utc)}},
+        upsert=True,
+    )
+    return events
+
+
+def native_langs(ev: dict) -> List[str]:
+    """Languages this entry can be read in natively.
+
+    Starts as the Wikipedia editions that carried it, and grows when the
+    curation step goes and fetches the real Italian article for a person.
+    """
+    return ev.get("native_langs") or ev.get("sources") or []
+
+
+def _pick_lang(mapping: dict, lang: str) -> str:
+    for candidate in LANG_FALLBACK.get(lang, ["en"]):
+        value = mapping.get(candidate)
+        if value:
+            return value
+    return ""
 
 
 def project_event_for_lang(ev: dict, lang: str) -> dict:
     """Return an event serialized for a specific language."""
-    text_by_lang = ev.get("text_by_lang", {})
-    title_by_lang = ev.get("title_by_lang", {})
-    text = text_by_lang.get(lang) or text_by_lang.get("en") or text_by_lang.get("it") or ""
-    title = title_by_lang.get(lang) or title_by_lang.get("en") or title_by_lang.get("it") or text[:60]
-    wiki_urls = ev.get("wiki_urls", {})
-    wiki_url = wiki_urls.get(lang) or wiki_urls.get("en") or wiki_urls.get("it")
+    text = _pick_lang(ev.get("text_by_lang", {}), lang)
+    title = _pick_lang(ev.get("title_by_lang", {}), lang) or text[:60]
+    extract = _pick_lang(ev.get("extract_by_lang", {}), lang)
+    wiki_url = _pick_lang(ev.get("wiki_urls", {}), lang) or None
+    # Which Wikipedia edition the text actually comes from. it.wikipedia publishes
+    # no births/deaths, so those cards fall back to es/en — the card says so
+    # rather than passing foreign text off as translated.
+    available = native_langs(ev)
+    text_lang = lang if lang in available else next(
+        (c for c in LANG_FALLBACK.get(lang, []) if c in available), lang
+    )
     return {
         "id": ev["id"],
+        "kind": ev.get("kind", "event"),
+        "text_lang": text_lang,
+        "fame": ev.get("fame"),
         "year": ev["year"],
         "years_ago": ev["years_ago"],
         "title": title,
         "text": text,
+        "extract": extract,
         "image_url": ev.get("image_url"),
         "category": ev["category"],
         "subcategory": ev.get("subcategory"),
@@ -612,9 +1004,17 @@ async def register(body: RegisterBody):
     existing = await db.users.find_one({"email": email})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
+    # Sign-up hashes the password and (optionally) the security answer. Doing them
+    # together on worker threads roughly halves the wait the user actually feels.
+    wants_question = bool(body.security_question and body.security_answer)
+    jobs = [hash_password_async(body.password)]
+    if wants_question:
+        jobs.append(hash_password_async(body.security_answer.strip().lower()))
+    hashes = await asyncio.gather(*jobs)
+
     doc = {
         "email": email,
-        "password_hash": hash_password(body.password),
+        "password_hash": hashes[0],
         "password_changed_at": datetime.now(timezone.utc),
         "name": (body.name or email.split("@")[0]).strip(),
         "role": "user",
@@ -623,9 +1023,9 @@ async def register(body: RegisterBody):
         "notifications_enabled": True,
         "created_at": datetime.now(timezone.utc),
     }
-    if body.security_question and body.security_answer:
+    if wants_question:
         doc["security_question"] = body.security_question.strip()
-        doc["security_answer_hash"] = hash_password(body.security_answer.strip().lower())
+        doc["security_answer_hash"] = hashes[1]
     res = await db.users.insert_one(doc)
     uid = str(res.inserted_id)
     return {
@@ -639,13 +1039,121 @@ async def register(body: RegisterBody):
 async def login(body: LoginBody):
     email = body.email.lower().strip()
     user = await db.users.find_one({"email": email})
-    if not user or not verify_password(body.password, user["password_hash"]):
+    # Google-only accounts have no password hash: they must come back through Google.
+    if user and not user.get("password_hash"):
+        raise HTTPException(status_code=401, detail="Questo account usa l'accesso con Google")
+    if not user or not await verify_password_async(body.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     uid = str(user["_id"])
     return {
         "access_token": create_access_token(uid, email),
         "refresh_token": create_refresh_token(uid),
         "user": user_public(user),
+    }
+
+
+# ============================================================
+# GOOGLE SIGN-IN
+# ============================================================
+GOOGLE_TOKENINFO_URL = "https://oauth2.googleapis.com/tokeninfo"
+GOOGLE_ISSUERS = ("accounts.google.com", "https://accounts.google.com")
+
+
+async def verify_google_id_token(id_token: str) -> dict:
+    """Validate a Google ID token and return its claims.
+
+    Uses Google's own tokeninfo endpoint: it checks the signature and expiry for
+    us, so there is no key handling and no extra dependency. We still verify the
+    audience and issuer ourselves — that part is never someone else's job.
+    """
+    if not GOOGLE_CLIENT_IDS:
+        raise HTTPException(status_code=503, detail="Google sign-in non configurato")
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as hc:
+            r = await hc.get(GOOGLE_TOKENINFO_URL, params={"id_token": id_token})
+    except Exception:
+        raise HTTPException(status_code=503, detail="Google non raggiungibile, riprova")
+    if r.status_code != 200:
+        raise HTTPException(status_code=401, detail="Token Google non valido")
+
+    claims = r.json()
+    if claims.get("aud") not in GOOGLE_CLIENT_IDS:
+        logger.warning(f"Google token with unexpected aud: {claims.get('aud')}")
+        raise HTTPException(status_code=401, detail="Token Google non valido")
+    if claims.get("iss") not in GOOGLE_ISSUERS:
+        raise HTTPException(status_code=401, detail="Token Google non valido")
+    if str(claims.get("email_verified", "")).lower() not in ("true", "1"):
+        raise HTTPException(status_code=401, detail="Email Google non verificata")
+    if not claims.get("email"):
+        raise HTTPException(status_code=401, detail="Token Google senza email")
+    return claims
+
+
+@api.post("/auth/google")
+async def auth_google(body: GoogleAuthBody):
+    """Sign in (or sign up) with Google. Existing email accounts get linked."""
+    claims = await verify_google_id_token(body.id_token)
+    email = claims["email"].lower().strip()
+    now = datetime.now(timezone.utc)
+
+    user = await db.users.find_one({"email": email})
+    if user:
+        await db.users.update_one(
+            {"_id": user["_id"]},
+            {"$set": {"google_sub": claims.get("sub"), "last_google_login": now}},
+        )
+        uid = str(user["_id"])
+        return {
+            "access_token": create_access_token(uid, email),
+            "refresh_token": create_refresh_token(uid),
+            "user": user_public(user),
+            "created": False,
+        }
+
+    doc = {
+        "email": email,
+        # No password_hash on purpose: this account signs in through Google only.
+        "name": (claims.get("name") or body.name or email.split("@")[0]).strip(),
+        "role": "user",
+        "language": body.language or "it",
+        "country": (body.country or "IT").upper(),
+        "notifications_enabled": True,
+        "auth_provider": "google",
+        "google_sub": claims.get("sub"),
+        "created_at": now,
+    }
+    res = await db.users.insert_one(doc)
+    uid = str(res.inserted_id)
+    return {
+        "access_token": create_access_token(uid, email),
+        "refresh_token": create_refresh_token(uid),
+        "user": user_public({"_id": res.inserted_id, **doc}),
+        "created": True,
+    }
+
+
+@api.get("/auth/google/status")
+async def auth_google_status():
+    """Lets the app show or hide the Google button without shipping a rebuild."""
+    return {"enabled": bool(GOOGLE_CLIENT_IDS)}
+
+
+@api.get("/auth/google/config")
+async def auth_google_config():
+    """Client IDs the app needs to start a Google sign-in.
+
+    Public on purpose: an OAuth client ID is not a secret — it appears in every
+    authorisation URL the browser sees. What protects the account is the token
+    verification in /auth/google, which happens here on the server.
+
+    Serving these instead of compiling them in is what lets an app already on the
+    store gain Google sign-in the day these are configured.
+    """
+    return {
+        "enabled": bool(GOOGLE_WEB_CLIENT_ID or GOOGLE_ANDROID_CLIENT_ID or GOOGLE_IOS_CLIENT_ID),
+        "web_client_id": GOOGLE_WEB_CLIENT_ID or None,
+        "android_client_id": GOOGLE_ANDROID_CLIENT_ID or None,
+        "ios_client_id": GOOGLE_IOS_CLIENT_ID or None,
     }
 
 
@@ -701,14 +1209,14 @@ async def forgot_reset(body: ForgotResetBody):
     if not user or not user.get("security_answer_hash"):
         raise HTTPException(status_code=404, detail=_FORGOT_GENERIC_ERR)
     answer = body.answer.strip().lower()
-    if not bcrypt.checkpw(answer.encode("utf-8"), user["security_answer_hash"].encode("utf-8")):
+    if not await verify_password_async(answer, user["security_answer_hash"]):
         raise HTTPException(status_code=401, detail="Risposta errata")
 
     now = datetime.now(timezone.utc)
     await db.users.update_one(
         {"_id": user["_id"]},
         {"$set": {
-            "password_hash": hash_password(body.new_password),
+            "password_hash": await hash_password_async(body.new_password),
             "password_changed_at": now,
         }},
     )
@@ -722,13 +1230,16 @@ async def update_security_question(
 ):
     """Set or change security question (requires current password)."""
     user = await db.users.find_one({"_id": ObjectId(current["id"])})
-    if not user or not verify_password(body.current_password, user["password_hash"]):
+    if not user:
+        raise HTTPException(status_code=401, detail="Password corrente errata")
+    # Google-only accounts have no password to confirm — the session token is the proof.
+    if user.get("password_hash") and not await verify_password_async(body.current_password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Password corrente errata")
     await db.users.update_one(
         {"_id": user["_id"]},
         {"$set": {
             "security_question": body.question.strip(),
-            "security_answer_hash": hash_password(body.answer.strip().lower()),
+            "security_answer_hash": await hash_password_async(body.answer.strip().lower()),
         }},
     )
     return {"ok": True, "has_security_question": True}
@@ -764,7 +1275,9 @@ async def events_today(
     category: Optional[str] = Query(None),
     decade: Optional[int] = Query(None),
     scope: Optional[Literal["global", "local", "all"]] = Query("all"),
-    limit: int = Query(40, ge=1, le=100),
+    kind: Optional[Literal["event", "birth", "death"]] = Query(None),
+    subcategory: Optional[str] = Query(None, max_length=40),
+    limit: int = Query(60, ge=1, le=250),
     current=Depends(get_current_user),
 ):
     user_lang = lang or current.get("language") or "it"
@@ -786,10 +1299,24 @@ async def events_today(
     ).to_list(length=10000)
     disliked_ids = {d["event_id"] for d in disliked_list}
 
-    # Filters
-    pool = all_events
+    # Language gate: only serve what actually exists in the reader's language.
+    #
+    # Mixing languages was the single worst thing the feed did — an Italian
+    # reader would get a Spanish sentence about Italian troops. Cards are either
+    # in your language or they are not shown. People (births/deaths) reach this
+    # point already carrying a real Italian article, fetched during curation.
+    pool = [e for e in all_events if user_lang in native_langs(e)]
+    if not pool:
+        # Nothing at all in their language: better a foreign card than a blank
+        # screen, and the card says which Wikipedia it came from.
+        pool = all_events
+
+    if kind:
+        pool = [e for e in pool if e.get("kind", "event") == kind]
     if category:
         pool = [e for e in pool if e["category"] == category]
+    if subcategory:
+        pool = [e for e in pool if e.get("subcategory") == subcategory]
     if decade is not None:
         pool = [e for e in pool if (e["year"] // 10) * 10 == decade]
     if scope and scope != "all":
@@ -811,6 +1338,10 @@ async def events_today(
             return True
         if ev.get("origin") == user_country:
             return True
+        # If the user's own Wikipedia edition carries the entry, it is relevant to
+        # them by definition — and the text is native, not a fallback translation.
+        if user_lang in native_langs(ev):
+            return True
         # If origin is None and no countries detected, fall back to text availability in user_lang
         if not ev.get("origin") and not ev.get("countries"):
             return bool(ev.get("text_by_lang", {}).get(user_lang))
@@ -823,6 +1354,14 @@ async def events_today(
         s = 0.0
         if ev.get("image_url"):
             s += 5
+        # Content the user can read in their own language comes first.
+        if user_lang in native_langs(ev):
+            s += 7
+        # Events still open the feed; births and deaths fill it out further down.
+        if ev.get("kind", "event") == "event":
+            s += 3
+        if ev.get("extract_by_lang", {}).get(user_lang):
+            s += 1
         for m in (10, 20, 25, 50, 75, 100, 150, 200, 500, 1000):
             if ev["years_ago"] == m:
                 s += 6
@@ -889,7 +1428,7 @@ async def events_teasers(
     country: Optional[str] = Query(None),
     month: Optional[int] = Query(None, ge=1, le=12),
     day: Optional[int] = Query(None, ge=1, le=31),
-    count: int = Query(20, ge=1, le=50),
+    count: int = Query(20, ge=1, le=120),
     current=Depends(get_current_user),
 ):
     """Return short curiosity-inducing teasers for push notifications."""
@@ -919,6 +1458,9 @@ async def events_teasers(
         s = 0.0
         if ev.get("image_url"):
             s += 3
+        # A notification the user can actually read beats a better story they can't.
+        if user_lang in native_langs(ev):
+            s += 8
         # Prefer round-number anniversaries for notifications (hook!)
         for m2 in (10, 20, 25, 50, 75, 100, 150, 200, 500, 1000):
             if ev["years_ago"] == m2:
@@ -935,8 +1477,15 @@ async def events_teasers(
             s += 5
         return -s
 
-    pool.sort(key=score)
-    pool = pool[:count]
+    # A notification has one line to earn a tap, so it must be in the reader's own
+    # language. Native entries are exhausted first and only then topped up from the
+    # other editions — ranking alone let a round anniversary in Spanish outrank
+    # every Italian story.
+    native = [e for e in pool if user_lang in native_langs(e)]
+    other = [e for e in pool if user_lang not in native_langs(e)]
+    native.sort(key=score)
+    other.sort(key=score)
+    pool = (native + other)[:count]
 
     teasers = []
     for e in pool:
@@ -945,6 +1494,7 @@ async def events_teasers(
         title = proj.get("title") or ""
         teasers.append({
             "id": proj["id"],
+            "kind": proj["kind"],
             "year": proj["year"],
             "years_ago": proj["years_ago"],
             "category": proj["category"],
@@ -979,14 +1529,16 @@ async def categories(current=Depends(get_current_user)):
 async def interact(body: InteractionBody, current=Depends(get_current_user)):
     # Locate event in merged cache
     now = datetime.now(timezone.utc)
-    cache = await db.events_cache.find_one({"_id": f"merged-{now.month:02d}-{now.day:02d}"})
+    cache = await db.events_cache.find_one({"_id": f"{CACHE_VERSION}-{now.month:02d}-{now.day:02d}"})
     ev_category = None
     ev_year = None
+    ev_snapshot = None
     if cache:
         for e in cache.get("events", []):
             if e["id"] == body.event_id:
                 ev_category = e.get("category")
                 ev_year = e.get("year")
+                ev_snapshot = e
                 break
 
     if body.action == "unsave":
@@ -1005,14 +1557,20 @@ async def interact(body: InteractionBody, current=Depends(get_current_user)):
         await db.interactions.delete_one({"_id": existing["_id"]})
         return {"ok": True, "removed": action_type}
 
-    await db.interactions.insert_one({
+    doc = {
         "user_id": current["id"],
         "event_id": body.event_id,
         "type": action_type,
         "category": ev_category,
         "year": ev_year,
         "created_at": datetime.now(timezone.utc),
-    })
+    }
+    # Saves keep their own copy of the event. Favourites then read straight from
+    # here instead of scanning every cached day — which, now that a day holds
+    # hundreds of events, would pull the whole cache into memory.
+    if action_type == "save" and ev_snapshot:
+        doc["snapshot"] = ev_snapshot
+    await db.interactions.insert_one(doc)
     return {"ok": True, "added": action_type}
 
 
@@ -1028,20 +1586,54 @@ async def favorites(
     if not saves:
         return {"count": 0, "events": []}
 
-    saved_ids = [s["event_id"] for s in saves]
-    caches = await db.events_cache.find({"_id": {"$regex": "^merged-"}}).to_list(length=500)
     by_id = {}
-    for c in caches:
-        for e in c.get("events", []):
-            by_id[e["id"]] = e
+    missing = []
+    for s in saves:
+        if s.get("snapshot"):
+            by_id[s["event_id"]] = s["snapshot"]
+        else:
+            missing.append(s["event_id"])
+
+    # Saves made before snapshots existed: resolve them against today's cache only.
+    if missing:
+        now = datetime.now(timezone.utc)
+        cache = await db.events_cache.find_one(
+            {"_id": f"{CACHE_VERSION}-{now.month:02d}-{now.day:02d}"}
+        )
+        if cache:
+            wanted = set(missing)
+            for e in cache.get("events", []):
+                if e["id"] in wanted:
+                    by_id[e["id"]] = e
 
     events = []
-    for sid in saved_ids:
-        if sid in by_id:
-            ev = project_event_for_lang(by_id[sid], user_lang)
+    for s in saves:
+        raw = by_id.get(s["event_id"])
+        if raw:
+            ev = project_event_for_lang(raw, user_lang)
             ev["saved"] = True
             events.append(ev)
     return {"count": len(events), "events": events}
+
+
+class ResetBody(BaseModel):
+    # 'likes' also clears what drives "categorie preferite" — that list is
+    # computed from likes, which is exactly why users could not find a way to
+    # clear it from the interests screen.
+    types: List[Literal["like", "dislike", "save"]] = Field(min_length=1)
+
+
+@api.post("/events/reset")
+async def reset_interactions(body: ResetBody, current=Depends(get_current_user)):
+    """Erase the user's own likes / dislikes / saves.
+
+    Without this there was no way back: a mis-tapped like shaped the feed and
+    the "top categories" list forever, with no visible undo.
+    """
+    result = await db.interactions.delete_many(
+        {"user_id": current["id"], "type": {"$in": list(body.types)}}
+    )
+    return {"ok": True, "removed": result.deleted_count}
 
 
 @api.get("/events/stats")
@@ -1304,6 +1896,348 @@ async def events_enrich(body: AiEnrichBody, current=Depends(get_current_user)):
 
 
 # ============================================================
+# PUSH NOTIFICATIONS (Expo) — server-driven, so they keep arriving
+# even when the app hasn't been opened in weeks
+# ============================================================
+EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
+PUSH_CHANNEL = "accadde-daily"
+
+KIND_ICON = {"event": "📜", "birth": "🎂", "death": "🕯️"}
+CATEGORY_ICON = {"wars": "⚔️", "science": "🔬", "culture": "🎭", "sports": "🏆", "politics": "🏛️"}
+
+# The brand leads every push: it has to be recognisable before it is read.
+BRAND = {"it": "Accadde Oggi", "en": "On This Day", "es": "Un Día Como Hoy"}
+
+# Round anniversaries spelled out. "Vent'anni fa" reads like a person wrote it,
+# "20 anni fa" reads like a database. Everything else stays as digits.
+SPELLED_YEARS = {
+    "it": {10: "dieci anni", 20: "vent'anni", 25: "venticinque anni", 30: "trent'anni",
+           40: "quarant'anni", 50: "mezzo secolo", 60: "sessant'anni", 70: "settant'anni",
+           75: "settantacinque anni", 80: "ottant'anni", 90: "novant'anni", 100: "cent'anni",
+           150: "centocinquant'anni", 200: "due secoli", 250: "duecentocinquant'anni",
+           500: "cinque secoli", 1000: "mille anni"},
+    "en": {10: "ten years", 20: "twenty years", 25: "twenty-five years", 30: "thirty years",
+           40: "forty years", 50: "half a century", 60: "sixty years", 70: "seventy years",
+           75: "seventy-five years", 80: "eighty years", 90: "ninety years", 100: "a century",
+           150: "a century and a half", 200: "two centuries", 250: "two hundred and fifty years",
+           500: "five centuries", 1000: "a thousand years"},
+    "es": {10: "diez años", 20: "veinte años", 25: "veinticinco años", 30: "treinta años",
+           40: "cuarenta años", 50: "medio siglo", 60: "sesenta años", 70: "setenta años",
+           75: "setenta y cinco años", 80: "ochenta años", 90: "noventa años", 100: "un siglo",
+           150: "siglo y medio", 200: "dos siglos", 250: "doscientos cincuenta años",
+           500: "cinco siglos", 1000: "mil años"},
+}
+
+OPENERS = {
+    "it": {"first": "{years} fa nasceva", "birth": "Nel {year} nasceva", "death": "Nel {year} ci lasciava"},
+    "en": {"first": "{years} ago this was born", "birth": "Born in {year}", "death": "In {year} we lost"},
+    "es": {"first": "Hace {years} nacía", "birth": "En {year} nacía", "death": "En {year} nos dejaba"},
+}
+
+FALLBACK_NUDGE = {
+    "it": "Trenta secondi e lo sai.",
+    "en": "Thirty seconds and you know.",
+    "es": "Treinta segundos y lo sabes.",
+}
+
+ROUND_ANNIVERSARIES = (10, 20, 25, 30, 40, 50, 60, 70, 75, 80, 90, 100, 150, 200, 250, 500, 1000)
+
+# Firsts, inventions and discoveries land differently from ordinary events:
+# "oggi hanno creato la lampadina" is its own kind of hook.
+FIRST_RE = re.compile(
+    r"\bprim[ao]\b|\binvent|\bbrevett|\bscopert|\bnasce\b|\bdebutt"
+    r"|\bfirst\b|\bpatent|\bdiscover|\blaunch|\bdebut"
+    r"|\bprimer[ao]?\b|\bdescubr|\bestren",
+    re.IGNORECASE,
+)
+
+
+def spell_years(lang: str, years: int) -> str:
+    spelled = SPELLED_YEARS.get(lang, {}).get(years)
+    if spelled:
+        return spelled
+    return f"{years} years" if lang == "en" else f"{years} anni"
+
+
+def build_push_content(teaser: dict, lang: str) -> dict:
+    """Title + body for one push, built from a real event.
+
+    Shape: "📜 Accadde Oggi · vent'anni fa" / "Il fatto vero, in chiaro."
+    """
+    kind = teaser.get("kind", "event")
+    year = teaser.get("year")
+    years_ago = teaser.get("years_ago") or 0
+    fact = (teaser.get("text_short") or teaser.get("title") or "").strip()
+    is_first = kind == "event" and bool(FIRST_RE.search(fact))
+    is_round = years_ago in ROUND_ANNIVERSARIES
+
+    icon = "💡" if is_first else "🎯" if is_round else (
+        CATEGORY_ICON.get(teaser.get("category")) or KIND_ICON.get(kind, "📜")
+    )
+    years = spell_years(lang, years_ago)
+    brand = BRAND.get(lang, BRAND["en"])
+
+    # A round anniversary is the occasion, so it always leads — spelled out,
+    # for anyone. Otherwise events show the distance and people show the year.
+    if kind == "event" or is_round:
+        stamp = f"{years} ago" if lang == "en" else (f"hace {years}" if lang == "es" else f"{years} fa")
+    else:
+        stamp = str(year)
+    title = f"{icon} {brand} · {stamp}"
+
+    if len(fact) <= 12:
+        body = FALLBACK_NUDGE.get(lang, FALLBACK_NUDGE["en"])
+    elif kind == "event" and not is_first:
+        body = fact
+    else:
+        opener_key = "first" if is_first else kind
+        opener = (OPENERS.get(lang) or OPENERS["en"])[opener_key]
+        body = f"{opener.format(years=years, year=year)} {fact}"
+
+    return {"title": title, "body": body}
+
+
+async def _expo_send(messages: List[dict]) -> dict:
+    """Post one batch to Expo and clean up tokens the device no longer accepts."""
+    sent = 0
+    dropped = 0
+    async with httpx.AsyncClient(timeout=30.0) as hc:
+        for i in range(0, len(messages), 100):
+            batch = messages[i: i + 100]
+            try:
+                r = await hc.post(
+                    EXPO_PUSH_URL,
+                    json=batch,
+                    headers={"Content-Type": "application/json", "Accept": "application/json"},
+                )
+                data = r.json().get("data", [])
+            except Exception as e:
+                logger.error(f"Expo push error: {e}")
+                continue
+            for msg, result in zip(batch, data if isinstance(data, list) else []):
+                if result.get("status") == "ok":
+                    sent += 1
+                    continue
+                err = (result.get("details") or {}).get("error")
+                if err in ("DeviceNotRegistered", "InvalidCredentials"):
+                    await db.push_tokens.delete_one({"token": msg["to"]})
+                    dropped += 1
+    return {"sent": sent, "dropped": dropped}
+
+
+def _push_score(ev: dict, country: str, lang: str = "it") -> float:
+    """Generic (non personalised) ranking used to pick the daily push subject."""
+    s = 0.0
+    if ev.get("image_url"):
+        s += 3
+    if lang in native_langs(ev):
+        s += 8
+    if ev["years_ago"] in (10, 20, 25, 50, 75, 100, 150, 200, 500, 1000):
+        s += 10
+    if ev["scope"] == "global":
+        s += 3
+    if country in ev.get("countries", []) or ev.get("origin") == country:
+        s += 4
+    return -s
+
+
+async def send_daily_push() -> dict:
+    """One push per registered device, built from today's best story.
+
+    Grouped by (language, country) so the whole round costs a handful of
+    Wikipedia-free cache reads, not one per user.
+    """
+    tokens = await db.push_tokens.find({"enabled": True}).to_list(length=20000)
+    if not tokens:
+        return {"ok": True, "sent": 0, "reason": "no tokens"}
+
+    now = datetime.now(timezone.utc)
+    events = await get_merged_events(now.month, now.day, "it")
+    if not events:
+        return {"ok": False, "sent": 0, "reason": "no events"}
+
+    messages: List[dict] = []
+    pools: dict = {}
+    for tok in tokens:
+        lang = tok.get("lang") or "it"
+        country = (tok.get("country") or "IT").upper()
+        key = (lang, country)
+        if key not in pools:
+            # Same rule as the teasers: readable in the user's language first.
+            native = [e for e in events if lang in native_langs(e)]
+            rest = [e for e in events if lang not in native_langs(e)]
+            ranked = (
+                sorted(native, key=lambda e: _push_score(e, country, lang))
+                + sorted(rest, key=lambda e: _push_score(e, country, lang))
+            )[:8]
+            pool_items = []
+            for e in ranked:
+                proj = project_event_for_lang(e, lang)
+                proj["text_short"] = _truncate_teaser(proj.get("text", ""), 110)
+                pool_items.append(proj)
+            pools[key] = pool_items
+        pool = pools[key]
+        if not pool:
+            continue
+        # Vary the story per device so two phones side by side don't match.
+        teaser = pool[hash(tok["token"]) % len(pool)]
+        content = build_push_content(teaser, lang)
+        messages.append({
+            "to": tok["token"],
+            "title": content["title"],
+            "body": content["body"],
+            "sound": "default",
+            "priority": "high",
+            "channelId": PUSH_CHANNEL,
+            "interruptionLevel": "time-sensitive",
+            "data": {"eventId": teaser["id"], "year": teaser["year"]},
+        })
+
+    result = await _expo_send(messages)
+    logger.info(f"Daily push: {result}")
+    return {"ok": True, **result, "devices": len(messages)}
+
+
+class PushRegisterBody(BaseModel):
+    token: str = Field(min_length=10, max_length=256)
+    lang: Optional[Literal["it", "en", "es"]] = None
+    country: Optional[str] = None
+    platform: Optional[str] = Field(default=None, max_length=20)
+
+
+@api.post("/push/register")
+async def push_register(body: PushRegisterBody, current=Depends(get_current_user)):
+    """Store an Expo push token so the server can reach this device."""
+    await db.push_tokens.update_one(
+        {"token": body.token},
+        {"$set": {
+            "token": body.token,
+            "user_id": current["id"],
+            "lang": body.lang or current.get("language") or "it",
+            "country": (body.country or current.get("country") or "IT").upper(),
+            "platform": body.platform,
+            "enabled": True,
+            "updated_at": datetime.now(timezone.utc),
+        }},
+        upsert=True,
+    )
+    return {"ok": True}
+
+
+@api.post("/push/unregister")
+async def push_unregister(body: PushRegisterBody, current=Depends(get_current_user)):
+    await db.push_tokens.delete_one({"token": body.token, "user_id": current["id"]})
+    return {"ok": True}
+
+
+# ============================================================
+# DAILY AUTO-REFRESH — keeps the app fresh without anyone touching it
+# ============================================================
+REFRESH_DAYS_AHEAD = 2        # today + the next two days
+CACHE_RETENTION_DAYS = 45     # days of unvisited cache we keep around
+KEEPALIVE_SECONDS = 600       # 10 min — under Render's 15 min idle shutdown
+
+
+async def refresh_upcoming_days() -> dict:
+    """Rebuild the cache for today and the next couple of days.
+
+    Notifications are scheduled a few days ahead, so those days have to be ready
+    before anyone asks for them.
+    """
+    today = datetime.now(timezone.utc).date()
+    counts = {}
+    for offset in range(REFRESH_DAYS_AHEAD + 1):
+        target = today + timedelta(days=offset)
+        counts[target.isoformat()] = await refresh_day_cache(target.month, target.day)
+    return counts
+
+
+async def purge_stale_cache() -> int:
+    """Drop cache documents from previous formats and days nobody has opened."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=CACHE_RETENTION_DAYS)
+    result = await db.events_cache.delete_many({
+        "$or": [
+            {"_id": {"$not": {"$regex": f"^{CACHE_VERSION}-"}}},
+            {"cached_at": {"$lt": cutoff}},
+        ]
+    })
+    if result.deleted_count:
+        logger.info(f"Purged {result.deleted_count} stale cache documents")
+    return result.deleted_count
+
+
+async def _keepalive_ping():
+    """Ping our own public URL so the free instance never falls asleep.
+
+    A sleeping instance means a ~1 minute cold start for whoever opens the app next.
+    """
+    if not SELF_URL:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as hc:
+            await hc.get(f"{SELF_URL}/api/health")
+    except Exception:
+        pass
+
+
+async def _daily_worker():
+    """Background loop: refresh once per UTC day, ping in between."""
+    await asyncio.sleep(10)  # let the app finish booting
+    last_refresh: Optional[str] = None
+    while True:
+        try:
+            today = datetime.now(timezone.utc).date().isoformat()
+            if last_refresh != today:
+                await refresh_upcoming_days()
+                await purge_stale_cache()
+                await send_daily_push()
+                last_refresh = today
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"Daily worker error: {e}")
+        await _keepalive_ping()
+        await asyncio.sleep(KEEPALIVE_SECONDS)
+
+
+def _require_cron_key(key: Optional[str], header_key: Optional[str]):
+    """Authorise a cron call.
+
+    Prefer the header: anything in a query string ends up in access logs, proxy
+    logs and CI output, so a secret passed that way is a secret written down in
+    several places. The query form stays for convenience but is the fallback.
+    Comparison is constant-time so a wrong key leaks nothing by how long it takes.
+    """
+    if not CRON_SECRET:
+        raise HTTPException(status_code=503, detail="CRON_SECRET not configured")
+    supplied = header_key or key or ""
+    if not hmac.compare_digest(supplied, CRON_SECRET):
+        raise HTTPException(status_code=403, detail="Invalid key")
+
+
+@api.get("/cron/daily")
+async def cron_daily(
+    key: Optional[str] = Query(None),
+    x_cron_key: Optional[str] = Header(None),
+):
+    """External daily trigger (GitHub Actions). Also wakes a sleeping instance."""
+    _require_cron_key(key, x_cron_key)
+    counts = await refresh_upcoming_days()
+    purged = await purge_stale_cache()
+    return {"ok": True, "refreshed": counts, "purged": purged}
+
+
+@api.get("/cron/push")
+async def cron_push(
+    key: Optional[str] = Query(None),
+    x_cron_key: Optional[str] = Header(None),
+):
+    """External trigger for the daily push round."""
+    _require_cron_key(key, x_cron_key)
+    return await send_daily_push()
+
+
+# ============================================================
 # STARTUP
 # ============================================================
 @app.on_event("startup")
@@ -1312,6 +2246,8 @@ async def startup():
     await db.interactions.create_index([("user_id", 1), ("event_id", 1), ("type", 1)], unique=True)
     await db.interactions.create_index([("user_id", 1), ("type", 1)])
     await db.events_cache.create_index("cached_at")
+    await db.push_tokens.create_index("token", unique=True)
+    await db.push_tokens.create_index("user_id")
 
     # Ensure existing users get a country if missing
     await db.users.update_many({"country": {"$exists": False}}, {"$set": {"country": "IT"}})
@@ -1346,9 +2282,15 @@ async def startup():
             await db.users.update_one({"email": test_email},
                                        {"$set": {"password_hash": hash_password(test_pw)}})
 
+    app.state.daily_worker = asyncio.create_task(_daily_worker())
+    logger.info("Daily refresh worker started")
+
 
 @app.on_event("shutdown")
 async def shutdown():
+    task = getattr(app.state, "daily_worker", None)
+    if task:
+        task.cancel()
     client.close()
 
 

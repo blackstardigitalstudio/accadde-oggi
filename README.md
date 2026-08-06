@@ -19,13 +19,38 @@ paese e gusti dell'utente. I contenuti arrivano in tempo reale da Wikipedia
 
 ## Funzionalità
 - Autenticazione JWT (registrazione, login, refresh, profilo)
+- **Accedi con Google** — opzionale: senza credenziali configurate il bottone non
+  compare. Guida passo passo in [docs/GOOGLE-LOGIN.md](docs/GOOGLE-LOGIN.md)
 - Feed multilingua (IT/EN/ES) con eventi globali e locali al paese dell'utente
+- **Eventi, nati e morti del giorno** da tutte e tre le edizioni di Wikipedia,
+  **selezionati**: ~130 eventi + ~105 personaggi che il mondo conosce davvero
+  (prima erano una sessantina di voci in tutto)
+- I personaggi passano il filtro solo se compaiono in almeno `FAME_MIN` edizioni
+  di Wikipedia, e per ognuno viene recuperato **l'articolo italiano vero**
 - Like / dislike / preferiti con personalizzazione
-- Filtri per categoria, decennio e ambito (globale / locale)
-- Notifiche push con teaser di eventi reali
+- Filtri per tipo, categoria, decennio e ambito (globale / locale)
+- Notifiche con priorità massima e vibrazione, frequenza scelta dall'utente
+  (2, 5 o 10 al giorno) e testi costruiti su eventi veri
+- Push dal server: arrivano anche se l'app non viene aperta per settimane
 - Approfondimento dell'evento dall'articolo Wikipedia
 
 Account di prova (creati all'avvio se imposti le env): `demo@accaddeoggi.app / Demo1234`.
+
+### Come si aggiorna da solo
+Il backend fa tutto senza che nessuno lo tocchi:
+
+| Cosa | Quando | Dove |
+|---|---|---|
+| Rigenera i contenuti di oggi e dei 2 giorni successivi | una volta per giorno UTC | worker interno |
+| Invia il giro di push giornaliero | subito dopo il refresh | worker interno |
+| Si auto-pinga per non addormentarsi | ogni 10 minuti | `SELF_URL` |
+| Pulisce la cache vecchia (>45 giorni) | col refresh giornaliero | worker interno |
+
+Il piano gratuito di Render spegne il servizio dopo 15 minuti di inattività, e da
+spento non può risvegliarsi da solo: per questo c'è il ping. Come rete di
+sicurezza aggiuntiva puoi attivare il workflow
+[`.github/workflows/daily-refresh.yml`](.github/workflows/daily-refresh.yml)
+copiando `CRON_SECRET` da Render in un secret di GitHub con lo stesso nome.
 
 ---
 

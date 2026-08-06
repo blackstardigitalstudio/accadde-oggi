@@ -39,6 +39,46 @@ L'estensione Chrome NON può screenshot/click su `play.google.com`, **ma `mcp__C
 4. Collega la lista tester interni salvata → copia link di partecipazione
 5. Rivedi → avvia rollout test interno (l'utente conferma il rollout)
 
+## Aggiornamento 02/08/2026 — branch `feat/contenuti-notifiche-google`
+
+Lavorato nella copia `D:\accadde oggi\...` (che prima non aveva remote: aggiunto
+`origin` e riportato tutto sopra `origin/main`, così il tasto PayPal, i fix
+TypeScript e `keep-warm.yml` sono rimasti intatti).
+
+- **Contenuti**: dal feed Wikipedia `events` al feed `all` → arrivano anche nati,
+  morti ed eventi in evidenza. 772 voci grezze, poi **selezionate**: restano ~133
+  eventi + ~105 personaggi noti. Nuovo campo `kind` (event/birth/death) e
+  `extract` (estratto reale dell'articolo, mostrato come "Approfondimento").
+- **Selezione dei personaggi** (`curate_people`): Wikipedia elenca ogni persona
+  nata quel giorno, centinaia, quasi tutte sconosciute. Wikidata ci dice in quante
+  edizioni compare ciascuno: sotto `FAME_MIN` (30) si scarta. 639 → 105.
+  La stessa chiamata dà il titolo dell'articolo **italiano**, che viene poi
+  scaricato: tutti e 105 i personaggi hanno testo italiano vero.
+  **Fallisce in sicurezza**: se Wikidata non risponde si tiene tutto, non si
+  cancella nulla.
+- Ordine importante: si seleziona *prima*, si cercano le immagini *dopo* — solo
+  sui sopravvissuti. Invertito, il fallback immagini faceva scattare il 429 di
+  Wikimedia e la selezione tornava vuota.
+- **Aggiornamento automatico**: worker interno (refresh giornaliero di oggi +2,
+  pulizia cache, giro di push, self-ping su `SELF_URL`) + `/api/cron/daily` e
+  `/api/cron/push` protetti da `CRON_SECRET` + `daily-refresh.yml`.
+- **Notifiche**: canali Android MAX con vibrazione lunga, canale a parte per gli
+  anniversari tondi, frequenza scelta dall'utente (2/5/10 al giorno), copy
+  riscritto sul gancio di curiosità, push dal server via Expo.
+- **Login Google**: `/api/auth/google`. Serve che l'utente crei le credenziali —
+  guida in `docs/GOOGLE-LOGIN.md`. Senza `GOOGLE_CLIENT_IDS` il bottone non compare.
+- **Velocità**: bcrypt su thread e costo 10 → registrazione 152 ms, login 128 ms
+  (prima bloccava tutto il server a ogni registrazione).
+- `app.json` a **1.1.0**: le nuove dipendenze native (expo-auth-session,
+  expo-crypto) e i permessi nuovi richiedono una **build nuova**, non basta l'OTA.
+
+### Da fare
+1. Su Render (`accadde-oggi-api`): impostare `SELF_URL`, `CRON_SECRET`, e
+   `GOOGLE_CLIENT_IDS` quando le credenziali Google sono pronte.
+2. Merge del branch su `main` → auto-deploy del backend (i contenuti nuovi
+   arrivano subito anche alle app già installate).
+3. Nuova build EAS per notifiche e Google (quota permettendo).
+
 ## Note
 - Push da `D:\accadde_clone` con PAT GitHub fine-grained (solo questa repo, scade 28/06/2026); una nuova sessione potrebbe doverne rigenerare uno.
 - Made in Italy 🇮🇹

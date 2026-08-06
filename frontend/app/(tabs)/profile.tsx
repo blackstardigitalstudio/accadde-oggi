@@ -6,7 +6,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { LogOut, Heart, Bookmark, ThumbsDown, ChevronRight, Bell, Sun, Moon, Shield, X, Coffee } from "lucide-react-native";
 import { useRouter } from "expo-router";
-import { useAuth } from "../../src/contexts/AuthContext";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  useAuth, readNotifPrefs, NOTIF_WINDOW_KEY, NOTIF_INTENSITY_KEY,
+} from "../../src/contexts/AuthContext";
 import { useTheme } from "../../src/contexts/ThemeContext";
 import api from "../../src/api/client";
 import { COLORS, categoryColor } from "../../src/theme";
@@ -16,7 +19,8 @@ import { INTERESTS, subLabel } from "../../src/i18n/interests";
 import { SECURITY_QUESTIONS, SECURITY_LABELS } from "../../src/i18n/security";
 import MadeInItaly from "../../src/components/MadeInItaly";
 import {
-  scheduleRandomDailyNotifications, cancelAllNotifications, getScheduledInfo, sendPreviewNotification, Window,
+  scheduleRandomDailyNotifications, cancelAllNotifications, getScheduledInfo, sendPreviewNotification,
+  Window, Intensity, INTENSITY_PER_DAY, SCHEDULE_DAYS,
 } from "../../src/services/notifications";
 
 const PAYPAL_URL = "https://paypal.me/cipollino66";
@@ -36,8 +40,10 @@ export default function Profile() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [showCountry, setShowCountry] = useState(false);
   const [notifWindow, setNotifWindow] = useState<Window>("random");
+  const [notifIntensity, setNotifIntensity] = useState<Intensity>("normal");
   const [notifInfo, setNotifInfo] = useState<{ count: number; nextDate?: Date; nextTitle?: string; nextBody?: string }>({ count: 0 });
   const [previewSending, setPreviewSending] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [secModalOpen, setSecModalOpen] = useState(false);
   const [secCurrentPw, setSecCurrentPw] = useState("");
   const [secQid, setSecQid] = useState("pet");
@@ -60,7 +66,17 @@ export default function Profile() {
     setNotifInfo(info);
   }, []);
 
-  useEffect(() => { loadStats(); loadNotifInfo(); }, [loadStats, loadNotifInfo]);
+  const loadNotifPrefs = useCallback(async () => {
+    const prefs = await readNotifPrefs();
+    setNotifWindow(prefs.window);
+    setNotifIntensity(prefs.intensity);
+  }, []);
+
+  useEffect(() => {
+    loadStats();
+    loadNotifInfo();
+    loadNotifPrefs();
+  }, [loadStats, loadNotifInfo, loadNotifPrefs]);
 
   const doLogout = () => {
     Alert.alert(
@@ -89,10 +105,14 @@ export default function Profile() {
     setShowCountry(false);
   };
 
+  const reschedule = async (w: Window, intensity: Intensity) => {
+    return scheduleRandomDailyNotifications(w, lang, SCHEDULE_DAYS, INTENSITY_PER_DAY[intensity]);
+  };
+
   const toggleNotif = async () => {
     const newState = !user?.notifications_enabled;
     if (newState) {
-      const res = await scheduleRandomDailyNotifications(notifWindow, lang, 14, 3);
+      const res = await reschedule(notifWindow, notifIntensity);
       if (!res.ok) {
       Alert.alert(
         t(lang, "permissionsNeeded"),
@@ -109,8 +129,18 @@ export default function Profile() {
 
   const changeWindow = async (w: Window) => {
     setNotifWindow(w);
+    await AsyncStorage.setItem(NOTIF_WINDOW_KEY, w);
     if (user?.notifications_enabled) {
-      await scheduleRandomDailyNotifications(w, lang, 14, 3);
+      await reschedule(w, notifIntensity);
+      await loadNotifInfo();
+    }
+  };
+
+  const changeIntensity = async (intensity: Intensity) => {
+    setNotifIntensity(intensity);
+    await AsyncStorage.setItem(NOTIF_INTENSITY_KEY, intensity);
+    if (user?.notifications_enabled) {
+      await reschedule(notifWindow, intensity);
       await loadNotifInfo();
     }
   };
@@ -135,7 +165,9 @@ export default function Profile() {
     const selected = SECURITY_QUESTIONS[lang].find((q) => q.id === secQid);
     const qText = secQid === "custom" ? secCustom.trim() : (selected?.label || "");
     const aText = secAnswer.trim();
-    if (!secCurrentPw || !qText || qText.length < 3 || !aText || aText.length < 2) {
+    // Google accounts have no password to confirm — the session itself is the proof.
+    const needsPassword = user?.has_password !== false;
+    if ((needsPassword && !secCurrentPw) || !qText || qText.length < 3 || !aText || aText.length < 2) {
       setSecErr(
         t(lang, "fillAllFields")
       );
@@ -162,6 +194,34 @@ export default function Profile() {
     }
   };
 
+  /** Wipe the likes that build the "top categories" list. */
+  const clearLikes = () => {
+    Alert.alert(
+      t(lang, "clearTopCats"),
+      t(lang, "clearTopCatsConfirm"),
+      [
+        { text: t(lang, "cancel"), style: "cancel" },
+        {
+          text: t(lang, "clearTopCats"),
+          style: "destructive",
+          onPress: async () => {
+            setClearing(true);
+            try {
+              await api.post("/events/reset", { types: ["like", "dislike"] });
+              await loadStats();
+            } catch {}
+            setClearing(false);
+          },
+        },
+      ]
+    );
+  };
+
+  /** Untick every interest at once. */
+  const clearInterests = async () => {
+    await updateUser({ interests: [] });
+  };
+
   const toggleInterest = async (key: string) => {
     const current = new Set(user?.interests || []);
     if (current.has(key)) current.delete(key);
@@ -185,6 +245,11 @@ export default function Profile() {
           </View>
           <Text style={[styles.name, { color: colors.textPrimary }]} testID="profile-name">{user?.name || "—"}</Text>
           <Text style={[styles.email, { color: colors.textSecondary }]}>{user?.email}</Text>
+          {user?.auth_provider === "google" && (
+            <Text style={[styles.since, { color: colors.textMuted }]} testID="profile-google-hint">
+              🔑 {t(lang, "googleAccountHint")}
+            </Text>
+          )}
           {user?.created_at && (
             <Text style={[styles.since, { color: colors.textMuted }]}>
               {t(lang, "memberSince")} {new Date(user.created_at).toLocaleDateString()}
@@ -237,6 +302,12 @@ export default function Profile() {
         {stats && stats.top_categories && stats.top_categories.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>{t(lang, "topCats").toUpperCase()}</Text>
+            {/* Say where this list comes from. It is computed from likes, not
+                from the interests below — without this line the two look like
+                the same setting and the missing "save" button reads as a bug. */}
+            <Text style={[styles.interestsHint, { color: colors.textMuted }]}>
+              {t(lang, "topCatsHint")}
+            </Text>
             <View style={styles.catsList}>
               {stats.top_categories.map((c) => (
                 <View key={c.category} style={[styles.catPill, { borderColor: categoryColor(c.category) }]}>
@@ -248,6 +319,17 @@ export default function Profile() {
                 </View>
               ))}
             </View>
+            <TouchableOpacity
+              testID="clear-top-cats"
+              onPress={clearLikes}
+              disabled={clearing}
+              style={[styles.clearBtn, { borderColor: colors.border, opacity: clearing ? 0.5 : 1 }]}
+              accessibilityRole="button"
+            >
+              <Text style={[styles.clearBtnText, { color: colors.like }]}>
+                {t(lang, "clearTopCats").toUpperCase()}
+              </Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -310,7 +392,7 @@ export default function Profile() {
               <Text style={[styles.settingTitle, { color: colors.textPrimary }]}>{t(lang, "notifications").toUpperCase()}</Text>
               <Text style={[styles.settingHint, { color: colors.textMuted }]}>
                 {user?.notifications_enabled
-                  ? `${t(lang, "notifSchedInfo")} · ${notifInfo.count} ${t(lang, "nProgrammate")}`
+                  ? `${t(lang, `intensity${notifIntensity === "soft" ? "Soft" : notifIntensity === "max" ? "Max" : "Normal"}Hint` as any)} · ${notifInfo.count} ${t(lang, "nProgrammate")}`
                   : t(lang, "notificationsDisabled")}
               </Text>
             </View>
@@ -325,7 +407,42 @@ export default function Profile() {
 
           {user?.notifications_enabled && (
             <View style={styles.hourPickerBox}>
-              <Text style={styles.hourLabel}>
+              {/* How many — three tiles, one tap, the number spelled out. */}
+              <Text style={styles.hourLabel}>{t(lang, "notifIntensity")}</Text>
+              <View style={styles.intensityGrid}>
+                {([
+                  { id: "soft" as Intensity, icon: "🌱", label: t(lang, "intensitySoft"), hint: t(lang, "intensitySoftHint") },
+                  { id: "normal" as Intensity, icon: "⚡", label: t(lang, "intensityNormal"), hint: t(lang, "intensityNormalHint") },
+                  { id: "max" as Intensity, icon: "🔥", label: t(lang, "intensityMax"), hint: t(lang, "intensityMaxHint") },
+                ]).map((opt) => {
+                  const active = notifIntensity === opt.id;
+                  return (
+                    <TouchableOpacity
+                      key={opt.id}
+                      testID={`notif-intensity-${opt.id}`}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
+                      accessibilityLabel={`${opt.label} — ${opt.hint}`}
+                      style={[
+                        styles.intensityTile,
+                        { borderColor: colors.border },
+                        active && { backgroundColor: colors.like, borderColor: colors.like },
+                      ]}
+                      onPress={() => changeIntensity(opt.id)}
+                    >
+                      <Text style={styles.intensityIcon}>{opt.icon}</Text>
+                      <Text style={[styles.intensityLabel, { color: colors.textPrimary }, active && { color: "#fff" }]}>
+                        {opt.label}
+                      </Text>
+                      <Text style={[styles.intensityHint, { color: colors.textMuted }, active && { color: "rgba(255,255,255,0.85)" }]}>
+                        {opt.hint}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <Text style={[styles.hourLabel, { marginTop: 18 }]}>
                 {t(lang, "notificationsWindow")}
               </Text>
               <View style={styles.windowGrid}>
@@ -398,6 +515,26 @@ export default function Profile() {
           <Text style={[styles.interestsHint, { color: colors.textMuted }]}>
             {t(lang, "interestsHint")}
           </Text>
+          {/* There is no save button because there is nothing to save: a tap is
+              already stored. Saying so removes the doubt, and the reset gives a
+              way out — the thing that was missing before. */}
+          <View style={styles.interestsToolbar}>
+            <Text style={[styles.autoSaved, { color: colors.textMuted }]}>
+              ✓ {t(lang, "savedAutomatically")}
+            </Text>
+            {interestsSet.size > 0 && (
+              <TouchableOpacity
+                testID="clear-interests"
+                onPress={clearInterests}
+                accessibilityRole="button"
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Text style={[styles.clearInline, { color: colors.like }]}>
+                  {t(lang, "clearInterests")}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
 
           {Object.keys(INTERESTS).map((cat) => {
             const accent = categoryColor(cat);
@@ -513,18 +650,22 @@ export default function Profile() {
             </View>
 
             <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 520 }}>
-              <Text style={[styles.modalLabel, { color: colors.textMuted }]}>
-                {SECURITY_LABELS[lang].currentPassword.toUpperCase()}
-              </Text>
-              <TextInput
-                testID="security-current-password"
-                value={secCurrentPw}
-                onChangeText={setSecCurrentPw}
-                placeholder="••••••••"
-                placeholderTextColor={colors.textMuted}
-                secureTextEntry
-                style={[styles.modalInput, { color: colors.textPrimary, borderColor: colors.border }]}
-              />
+              {user?.has_password !== false && (
+                <>
+                  <Text style={[styles.modalLabel, { color: colors.textMuted }]}>
+                    {SECURITY_LABELS[lang].currentPassword.toUpperCase()}
+                  </Text>
+                  <TextInput
+                    testID="security-current-password"
+                    value={secCurrentPw}
+                    onChangeText={setSecCurrentPw}
+                    placeholder="••••••••"
+                    placeholderTextColor={colors.textMuted}
+                    secureTextEntry
+                    style={[styles.modalInput, { color: colors.textPrimary, borderColor: colors.border }]}
+                  />
+                </>
+              )}
 
               <Text style={[styles.modalLabel, { color: colors.textMuted, marginTop: 16 }]}>
                 {SECURITY_LABELS[lang].questionLabel.toUpperCase()}
@@ -705,6 +846,22 @@ const styles = StyleSheet.create({
   },
   hourChipActive: { backgroundColor: COLORS.textPrimary, borderColor: COLORS.textPrimary },
   hourText: { color: COLORS.textSecondary, fontSize: 12, fontWeight: "800", letterSpacing: 1 },
+  intensityGrid: { flexDirection: "row", gap: 8, marginBottom: 4 },
+  intensityTile: {
+    flex: 1,
+    alignItems: "center",
+    // Well past the 44px minimum, so it is easy to hit with a thumb.
+    minHeight: 88,
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  intensityIcon: { fontSize: 22 },
+  intensityLabel: { fontSize: 13, fontWeight: "800", marginTop: 6 },
+  intensityHint: { fontSize: 11, fontWeight: "600", marginTop: 2 },
   windowGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   windowChip: {
     flexDirection: "row", alignItems: "center", gap: 8,
@@ -764,6 +921,22 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
   },
   interestsHint: { color: COLORS.textMuted, fontSize: 12, lineHeight: 18, marginBottom: 14 },
+  interestsToolbar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 14,
+  },
+  autoSaved: { fontSize: 11, fontWeight: "700", letterSpacing: 0.5 },
+  clearInline: { fontSize: 12, fontWeight: "800", textDecorationLine: "underline" },
+  clearBtn: {
+    marginTop: 12,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: "center",
+  },
+  clearBtnText: { fontSize: 11, fontWeight: "900", letterSpacing: 1.5 },
   interestCat: { marginBottom: 14 },
   interestCatHead: {
     flexDirection: "row", alignItems: "center", gap: 10,

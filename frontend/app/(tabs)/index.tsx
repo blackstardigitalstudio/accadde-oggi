@@ -12,14 +12,16 @@ import EventCard, { EventData } from "../../src/components/EventCard";
 import { COLORS } from "../../src/theme";
 import { t, T, Lang } from "../../src/i18n/translations";
 import { countryFlag } from "../../src/i18n/countries";
+import { useTabBarHeight } from "../../src/hooks/useTabBarHeight";
 
 export default function Feed() {
   const { user } = useAuth();
   const { colors, mode } = useTheme();
   const { height, width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const bottomInset = insets.bottom || 12;
-  const tabBarHeight = 58 + bottomInset;
+  // Same source of truth as the bar itself: computing it here as well is what
+  // left a 12px strip of the next card showing under every screen.
+  const { height: tabBarHeight } = useTabBarHeight();
   const cardHeight = height - tabBarHeight;
 
   const [events, setEvents] = useState<EventData[]>([]);
@@ -33,7 +35,7 @@ export default function Feed() {
   const load = useCallback(async () => {
     setErr(null);
     try {
-      const { data } = await api.get("/events/today", { params: { limit: 40 } });
+      const { data } = await api.get("/events/today", { params: { limit: 120 } });
       setEvents(data.events || []);
     } catch (e: any) {
       setErr(t(lang, "errorFeed"));
