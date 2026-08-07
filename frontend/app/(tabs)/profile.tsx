@@ -623,10 +623,41 @@ export default function Profile() {
           </TouchableOpacity>
         </View>
 
+        {user?.is_guest ? (
+          /* A guest has nothing to log out of. What they need is a way to keep
+             what they have collected, and a plain reason why that is worth a tap. */
+          <View style={styles.section}>
+            <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>
+              {t(lang, "guestTitle")}
+            </Text>
+            <Text style={[styles.interestsHint, { color: colors.textMuted }]}>
+              {t(lang, "guestHint")}
+            </Text>
+            <TouchableOpacity
+              testID="guest-create-account"
+              style={[styles.secBtn, { backgroundColor: colors.like }]}
+              onPress={() => router.push("/auth/register")}
+            >
+              <Text style={[styles.secBtnText, { color: "#fff" }]}>
+                {t(lang, "guestCreate").toUpperCase()}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="guest-sign-in"
+              style={styles.forgotBtnCentered}
+              onPress={() => router.push("/auth/login")}
+            >
+              <Text style={[styles.guestSignIn, { color: colors.textSecondary }]}>
+                {t(lang, "guestHaveAccount")}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
         <TouchableOpacity style={styles.logoutBtn} onPress={doLogout} testID="logout-button">
           <LogOut color={COLORS.like} size={18} strokeWidth={2.5} />
           <Text style={styles.logoutText}>{t(lang, "logout").toUpperCase()}</Text>
         </TouchableOpacity>
+        )}
 
         <MadeInItaly style={{ marginTop: 28 }} />
       </ScrollView>
@@ -1037,6 +1068,8 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     letterSpacing: 2,
   },
+  forgotBtnCentered: { marginTop: 14, alignItems: "center" },
+  guestSignIn: { fontSize: 13, textDecorationLine: "underline", fontWeight: "600" },
   logoutBtn: {
     flexDirection: "row",
     alignItems: "center", justifyContent: "center",

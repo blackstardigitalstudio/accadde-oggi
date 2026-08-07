@@ -14,6 +14,23 @@ import {
 
 const USER_CACHE_KEY = "accadde:user";
 const LANG_KEY = "accadde:lang";  // keep in sync with LanguageContext
+const DEVICE_KEY = "accadde:deviceId";
+
+/**
+ * A random id for this install, made here rather than read from the device.
+ *
+ * It identifies the guest account and nothing else: no hardware identifier, no
+ * way to recognise the same person anywhere else. Clearing the app's data makes
+ * a new one, which is the correct behaviour for something this anonymous.
+ */
+async function getDeviceId(): Promise<string> {
+  const saved = await AsyncStorage.getItem(DEVICE_KEY);
+  if (saved) return saved;
+  const fresh =
+    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+  await AsyncStorage.setItem(DEVICE_KEY, fresh);
+  return fresh;
+}
 export const NOTIF_WINDOW_KEY = "accadde:notifWindow";
 export const NOTIF_INTENSITY_KEY = "accadde:notifIntensity";
 
@@ -39,7 +56,8 @@ export type User = {
   interests: string[];
   notifications_enabled: boolean;
   has_security_question?: boolean;
-  auth_provider?: "password" | "google";
+  auth_provider?: "password" | "google" | "guest";
+  is_guest?: boolean;
   has_password?: boolean;
   created_at?: string;
 };
@@ -83,11 +101,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch {}
   };
 
+  const persistTokens = async (access: string, refresh: string) => {
+    await AsyncStorage.setItem(ACCESS_KEY, access);
+    await AsyncStorage.setItem(REFRESH_KEY, refresh);
+  };
+
+  /**
+   * Get in without being asked anything.
+   *
+   * The app used to open on a sign-up form: people had to hand over an email
+   * before seeing a single card, which is asking for commitment before giving
+   * any reason to commit. Now a guest account is created silently on first
+   * launch and the app opens on the feed. Signing up later upgrades that same
+   * account, so nothing saved is lost.
+   */
+  const startAsGuest = useCallback(async () => {
+    try {
+      const device_id = await getDeviceId();
+      const lang = (await AsyncStorage.getItem(LANG_KEY)) || "it";
+      const { data } = await api.post("/auth/guest", { device_id, language: lang });
+      await persistTokens(data.access_token, data.refresh_token);
+      setUser(data.user);
+      await AsyncStorage.setItem(USER_CACHE_KEY, JSON.stringify(data.user));
+    } catch {
+      // Server unreachable on a cold start: show the sign-in screen rather than
+      // a dead end, so there is still a way forward.
+      setUser(null);
+    }
+  }, []);
+
   const loadMe = useCallback(async () => {
     const token = await AsyncStorage.getItem(ACCESS_KEY);
     const refresh = await AsyncStorage.getItem(REFRESH_KEY);
     if (!token && !refresh) {
-      setUser(null);
+      await startAsGuest();
       return;
     }
     // Hydrate from cache immediately so the app stays logged in even offline
@@ -116,16 +163,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       // else: keep cached user — app remains usable offline
     }
-  }, []);
+  }, [startAsGuest]);
 
   useEffect(() => {
     loadMe();
   }, [loadMe]);
-
-  const persistTokens = async (access: string, refresh: string) => {
-    await AsyncStorage.setItem(ACCESS_KEY, access);
-    await AsyncStorage.setItem(REFRESH_KEY, refresh);
-  };
 
   /** Shared tail of every successful sign-in. */
   const applySession = async (data: any) => {
@@ -191,7 +233,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async () => {
     await AsyncStorage.multiRemove([ACCESS_KEY, REFRESH_KEY, USER_CACHE_KEY]);
-    setUser(null);
+    // Back to browsing as a guest rather than to a locked door: leaving your
+    // account should not mean losing the app.
+    await startAsGuest();
   };
 
   const updateUser = async (patch: Partial<User>) => {

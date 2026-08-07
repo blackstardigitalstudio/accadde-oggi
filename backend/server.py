@@ -142,6 +142,7 @@ def user_public(user: dict) -> dict:
         "has_security_question": bool(user.get("security_question")),
         "auth_provider": user.get("auth_provider", "password"),
         "has_password": bool(user.get("password_hash")),
+        "is_guest": bool(user.get("is_guest")),
         "created_at": user.get("created_at").isoformat() if user.get("created_at") else None,
     }
 
@@ -195,6 +196,12 @@ class LoginBody(BaseModel):
 
 class RefreshBody(BaseModel):
     refresh_token: str
+
+
+class GuestBody(BaseModel):
+    device_id: str = Field(min_length=8, max_length=128)
+    language: Optional[Literal["it", "en", "es"]] = "it"
+    country: Optional[str] = "IT"
 
 
 class GoogleAuthBody(BaseModel):
@@ -998,12 +1005,74 @@ def project_event_for_lang(ev: dict, lang: str) -> dict:
 # ============================================================
 # AUTH ENDPOINTS
 # ============================================================
+# Guest accounts get a synthetic address on a domain nobody can receive mail at,
+# so they satisfy the unique-email index without ever looking like a real user.
+GUEST_EMAIL_DOMAIN = "guest.accaddeoggi.invalid"
+
+
+async def get_optional_user(
+    request: Request,
+    creds: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+) -> Optional[dict]:
+    """The signed-in user if there is one, otherwise nothing. Never raises.
+
+    Used where a request works either way — signing up while already browsing
+    as a guest, for instance.
+    """
+    try:
+        return await get_current_user(request, creds)
+    except HTTPException:
+        return None
+
+
+@api.post("/auth/guest")
+async def auth_guest(body: GuestBody):
+    """An account that costs nothing to create, so the app can be used at once.
+
+    Asking for an email before showing a single card loses the people who
+    haven't yet been given a reason to care. This hands out a real account tied
+    to the device, invisible to the user; when they later sign up, that same
+    account is upgraded in place and everything they saved comes with them.
+    """
+    marker = hashlib.sha256(body.device_id.encode("utf-8")).hexdigest()[:24]
+    email = f"guest-{marker}@{GUEST_EMAIL_DOMAIN}"
+
+    user = await db.users.find_one({"email": email})
+    if not user:
+        doc = {
+            "email": email,
+            "name": "",
+            "role": "user",
+            "language": body.language or "it",
+            "country": (body.country or "IT").upper(),
+            "notifications_enabled": True,
+            "is_guest": True,
+            "auth_provider": "guest",
+            "created_at": datetime.now(timezone.utc),
+        }
+        res = await db.users.insert_one(doc)
+        user = {"_id": res.inserted_id, **doc}
+
+    uid = str(user["_id"])
+    return {
+        "access_token": create_access_token(uid, email),
+        "refresh_token": create_refresh_token(uid),
+        "user": user_public(user),
+    }
+
+
 @api.post("/auth/register")
-async def register(body: RegisterBody):
+async def register(body: RegisterBody, current=Depends(get_optional_user)):
     email = body.email.lower().strip()
     existing = await db.users.find_one({"email": email})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
+
+    # Already browsing as a guest? Upgrade that same account rather than making a
+    # second one, so the events they saved while looking around are still theirs.
+    guest_id = None
+    if current and current.get("is_guest"):
+        guest_id = ObjectId(current["id"])
     # Sign-up hashes the password and (optionally) the security answer. Doing them
     # together on worker threads roughly halves the wait the user actually feels.
     wants_question = bool(body.security_question and body.security_answer)
@@ -1026,6 +1095,23 @@ async def register(body: RegisterBody):
     if wants_question:
         doc["security_question"] = body.security_question.strip()
         doc["security_answer_hash"] = hashes[1]
+
+    if guest_id:
+        # Same document, new identity: the likes and saves already attached to
+        # this user id stay attached. Losing them at sign-up would punish exactly
+        # the people who used the app enough to want an account.
+        doc["is_guest"] = False
+        doc["auth_provider"] = "password"
+        await db.users.update_one({"_id": guest_id}, {"$set": doc})
+        user = await db.users.find_one({"_id": guest_id})
+        uid = str(guest_id)
+        return {
+            "access_token": create_access_token(uid, email),
+            "refresh_token": create_refresh_token(uid),
+            "user": user_public(user),
+            "upgraded": True,
+        }
+
     res = await db.users.insert_one(doc)
     uid = str(res.inserted_id)
     return {
@@ -1090,13 +1176,35 @@ async def verify_google_id_token(id_token: str) -> dict:
 
 
 @api.post("/auth/google")
-async def auth_google(body: GoogleAuthBody):
+async def auth_google(body: GoogleAuthBody, current=Depends(get_optional_user)):
     """Sign in (or sign up) with Google. Existing email accounts get linked."""
     claims = await verify_google_id_token(body.id_token)
     email = claims["email"].lower().strip()
     now = datetime.now(timezone.utc)
 
     user = await db.users.find_one({"email": email})
+
+    # Coming from a guest session and this Google account is new here? Upgrade
+    # the guest in place so the saves made while browsing survive the sign-up.
+    if not user and current and current.get("is_guest"):
+        guest_id = ObjectId(current["id"])
+        await db.users.update_one({"_id": guest_id}, {"$set": {
+            "email": email,
+            "name": (claims.get("name") or body.name or "").strip(),
+            "is_guest": False,
+            "auth_provider": "google",
+            "google_sub": claims.get("sub"),
+            "last_google_login": now,
+        }})
+        upgraded = await db.users.find_one({"_id": guest_id})
+        uid = str(guest_id)
+        return {
+            "access_token": create_access_token(uid, email),
+            "refresh_token": create_refresh_token(uid),
+            "user": user_public(upgraded),
+            "created": True,
+            "upgraded": True,
+        }
     if user:
         await db.users.update_one(
             {"_id": user["_id"]},
