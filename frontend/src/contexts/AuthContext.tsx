@@ -53,7 +53,7 @@ type AuthState = {
     security_question?: string, security_answer?: string
   ) => Promise<void>;
   logout: () => Promise<void>;
-  updateUser: (patch: Partial<User>) => Promise<void>;
+  updateUser: (patch: Partial<User>) => Promise<User>;
   setLanguage: (lang: Lang) => Promise<void>;
   refreshMe: () => Promise<void>;
 };
@@ -130,18 +130,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   /** Shared tail of every successful sign-in. */
   const applySession = async (data: any) => {
     await persistTokens(data.access_token, data.refresh_token);
+
+    // The language chosen on the sign-in screen wins over whatever the account
+    // remembers. Someone who taps the Italian flag and then gets an English app
+    // has been ignored — and the notifications, built at this very moment, were
+    // being written in the account's old language.
+    const picked = await AsyncStorage.getItem(LANG_KEY);
+    let lang: Lang = data.user?.language || "it";
+    if ((picked === "it" || picked === "en" || picked === "es") && picked !== lang) {
+      lang = picked;
+      try {
+        const { data: updated } = await api.patch("/auth/me", { language: lang });
+        data = { ...data, user: updated };
+      } catch {
+        // Offline: honour the choice locally anyway rather than override it.
+        data = { ...data, user: { ...data.user, language: lang } };
+      }
+    }
+
     setUser(data.user);
     await AsyncStorage.setItem(USER_CACHE_KEY, JSON.stringify(data.user));
-    // Sync app-wide language with user's preference
-    if (data.user?.language) {
-      await AsyncStorage.setItem(LANG_KEY, data.user.language);
-    }
+    await AsyncStorage.setItem(LANG_KEY, lang);
+
     if (data.user?.notifications_enabled) {
       const { window, intensity } = await readNotifPrefs();
       scheduleRandomDailyNotifications(
-        window, data.user.language || "it", SCHEDULE_DAYS, INTENSITY_PER_DAY[intensity]
+        window, lang, SCHEDULE_DAYS, INTENSITY_PER_DAY[intensity]
       );
-      registerPushToken(data.user.language || "it", data.user.country);
+      registerPushToken(lang, data.user.country);
     }
   };
 
@@ -185,10 +201,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (data?.language) {
       await AsyncStorage.setItem(LANG_KEY, data.language);
     }
+    return data as User;
   };
 
   const setLanguage = async (lang: Lang) => {
-    await updateUser({ language: lang });
+    const updated = await updateUser({ language: lang });
+    // Notifications are written when they are queued, not when they fire, so
+    // the ones already waiting still carry the old language. Switching to
+    // Italian and then getting an English notification hours later makes the
+    // app look broken. Rewrite the queue in the new language.
+    if (!updated?.notifications_enabled) return;
+    try {
+      const { window, intensity } = await readNotifPrefs();
+      await scheduleRandomDailyNotifications(
+        window, lang, SCHEDULE_DAYS, INTENSITY_PER_DAY[intensity]
+      );
+      registerPushToken(lang, updated.country);
+    } catch {}
   };
 
   return (

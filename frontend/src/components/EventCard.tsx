@@ -3,6 +3,7 @@ import {
   View, Text, ImageBackground, StyleSheet, TouchableOpacity,
   useWindowDimensions, Share, Platform, Modal, ScrollView, Linking, ActivityIndicator,
 } from "react-native";
+import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -112,13 +113,36 @@ const EventCard: React.FC<Props> = ({ event, lang, height, onLike, onDislike, on
 
   return (
     <View style={[styles.card, { height }]} testID={`event-card-${event.id}`}>
-      <ImageBackground source={img} style={StyleSheet.absoluteFillObject} resizeMode="cover">
+      {/* Two layers of the same picture.
+          Behind: blown up and darkened, purely to fill the screen with matching
+          colour. In front: the whole picture, uncropped.
+
+          A single "cover" layer was cropping a landscape photo into a portrait
+          card, which meant you got somebody's mouth filling the screen instead
+          of the scene. "Contain" alone would leave black bars; the blurred copy
+          fills them with the photo's own colours. */}
+      <View style={StyleSheet.absoluteFillObject}>
+        <Image
+          source={img}
+          style={[StyleSheet.absoluteFillObject, styles.backdrop]}
+          contentFit="cover"
+          blurRadius={38}
+          transition={200}
+        />
+        <View style={styles.photoArea}>
+          <Image
+            source={img}
+            style={StyleSheet.absoluteFillObject}
+            contentFit="contain"
+            transition={220}
+          />
+        </View>
         <LinearGradient
-          colors={["transparent", "rgba(5,5,5,0.3)", "rgba(5,5,5,0.85)", "#050505"]}
-          locations={[0, 0.35, 0.75, 1]}
+          colors={["rgba(5,5,5,0.55)", "rgba(5,5,5,0.15)", "rgba(5,5,5,0.85)", "#050505"]}
+          locations={[0, 0.3, 0.72, 1]}
           style={StyleSheet.absoluteFillObject}
         />
-      </ImageBackground>
+      </View>
 
       {/* Top badges - pressable */}
       <View style={[styles.topRow, { top: topOffset }]}>
@@ -372,6 +396,11 @@ export default memo(EventCard);
 
 const styles = StyleSheet.create({
   card: { width: "100%", backgroundColor: "#050505" },
+  backdrop: { opacity: 0.55 },
+  // The photo sits in the upper part of the card: the lower third is where the
+  // year, the title and the buttons live, and a face half-covered by text is
+  // worse than a slightly smaller picture.
+  photoArea: { position: "absolute", top: 0, left: 0, right: 0, height: "62%" },
   topRow: {
     position: "absolute",
     left: 24,
