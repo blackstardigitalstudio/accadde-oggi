@@ -40,7 +40,8 @@ export const INTERESTS: Record<string, Subcat[]> = {
   sports: [
     { id: "football", label_it: "Calcio", label_en: "Football", label_es: "Fútbol", icon: "⚽" },
     { id: "olympics", label_it: "Olimpiadi", label_en: "Olympics", label_es: "Olimpiadas", icon: "🏅" },
-    { id: "motorsport", label_it: "Motori (F1)", label_en: "Motorsport (F1)", label_es: "Motor (F1)", icon: "🏎️" },
+    { id: "motorsport", label_it: "Formula 1", label_en: "Formula 1", label_es: "Fórmula 1", icon: "🏎️" },
+    { id: "motogp", label_it: "MotoGP", label_en: "MotoGP", label_es: "MotoGP", icon: "🏍️" },
     { id: "tennis", label_it: "Tennis", label_en: "Tennis", label_es: "Tenis", icon: "🎾" },
     { id: "cycling", label_it: "Ciclismo", label_en: "Cycling", label_es: "Ciclismo", icon: "🚴" },
     { id: "boxing", label_it: "Pugilato", label_en: "Boxing", label_es: "Boxeo", icon: "🥊" },

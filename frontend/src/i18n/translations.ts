@@ -76,6 +76,7 @@ export const T: Translations = {
     share: "Condividi",
     readMore: "Leggi di più",
     retry: "Riprova",
+    refresh: "Aggiorna",
     swipeHint: "Scorri per scoprire",
 
     // Categories
@@ -268,6 +269,7 @@ export const T: Translations = {
     share: "Share",
     readMore: "Read more",
     retry: "Retry",
+    refresh: "Refresh",
     swipeHint: "Swipe to discover",
 
     allCategories: "All",
@@ -451,6 +453,7 @@ export const T: Translations = {
     share: "Compartir",
     readMore: "Leer más",
     retry: "Reintentar",
+    refresh: "Actualizar",
     swipeHint: "Desliza para descubrir",
 
     allCategories: "Todas",

@@ -40,6 +40,8 @@ REFRESH_TOKEN_DAYS = 365                # 1 year
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
 
+from curated_events import curated_for_day
+
 # Bump when the cached event shape changes, so old documents are never served.
 CACHE_VERSION = "merged-v2"
 # Shared secret for the external daily trigger (GitHub Actions / uptime pinger).
@@ -335,6 +337,9 @@ SUBCATEGORY_KEYWORDS = {
         "olympics": ["olympic", "olympics", "olimpi", "olímpic"],
         "motorsport": ["formula", "f1", "ferrari", "mclaren", "racing", "grand prix",
                        "automobilismo", "gran premio"],
+        "motogp": ["motogp", "moto gp", "moto2", "moto3", "motociclismo", "motorcycle",
+                   "motorbike", "valentino rossi", "marquez", "márquez", "agostini",
+                   "ducati", "500cc", "motociclista", "world superbike", "superbike"],
         "tennis": ["tennis", "wimbledon", "roland garros", "grand slam"],
         "cycling": ["cycling", "tour de france", "giro d'italia", "vuelta",
                     "ciclismo", "ciclista"],
@@ -908,6 +913,10 @@ async def build_merged_events(month: int, day: int) -> List[dict]:
                 e["image_url"] = src
     for e in final:
         e.pop("_img_fallback", None)
+
+    # Hand-curated iconic events for this day (verified, versioned in code).
+    # Added AFTER curation so they are guaranteed to appear.
+    final.extend(curated_for_day(month, day, current_year))
 
     return final
 

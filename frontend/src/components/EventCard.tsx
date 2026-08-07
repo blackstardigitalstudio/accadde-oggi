@@ -129,7 +129,7 @@ const EventCard: React.FC<Props> = ({ event, lang, height, onLike, onDislike, on
           blurRadius={38}
           transition={200}
         />
-        <View style={styles.photoArea}>
+        <View style={[styles.photoArea, { top: insets.top + 72 }]}>
           <Image
             source={img}
             style={StyleSheet.absoluteFillObject}
@@ -144,51 +144,51 @@ const EventCard: React.FC<Props> = ({ event, lang, height, onLike, onDislike, on
         />
       </View>
 
-      {/* Top badges - pressable */}
-      <View style={[styles.topRow, { top: topOffset }]}>
-        {kind !== "event" && (
-          <View style={styles.kindPill} testID={`card-kind-${event.id}`}>
-            <Text style={styles.kindText}>
-              {KIND_ICON[kind]} {t(lang, KIND_LABEL_KEY[kind]).toUpperCase()}
-            </Text>
-          </View>
-        )}
-        <TouchableOpacity
-          testID={`card-cat-${event.id}`}
-          style={[styles.catPill, { borderLeftColor: accent }]}
-          onPress={() => router.push({ pathname: "/explore", params: { category: event.category } })}
-          activeOpacity={0.7}
-        >
-          <Text style={[styles.catText, { color: accent }]}>
-            {t(lang, event.category as any).toUpperCase()}
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          testID={`card-scope-${event.id}`}
-          style={styles.scopePill}
-          onPress={() => router.push({ pathname: "/explore", params: { scope: event.scope } })}
-          activeOpacity={0.7}
-        >
-          {event.scope === "global" ? (
-            <Globe color="#F8F8F6" size={12} strokeWidth={2.5} />
-          ) : (
-            <MapPin color={accent} size={12} strokeWidth={2.5} />
-          )}
-          <Text style={[styles.scopeText, event.scope === "local" && { color: accent }]}>
-            {event.scope === "global"
-              ? t(lang, "global").toUpperCase()
-              : countryLabel(event.origin || (event.countries?.[0] || ""), lang).toUpperCase()}
-          </Text>
-          {event.scope === "local" && (
-            <Text style={styles.flagText}>
-              {countryFlag(event.origin || event.countries?.[0] || "")}
-            </Text>
-          )}
-        </TouchableOpacity>
-      </View>
-
       {/* Bottom content */}
       <View style={styles.bottom}>
+        {/* Meta badges live here (not over the photo) so they never cover faces. */}
+        <View style={styles.metaRow}>
+          {kind !== "event" && (
+            <View style={styles.kindPill} testID={`card-kind-${event.id}`}>
+              <Text style={styles.kindText}>
+                {KIND_ICON[kind]} {t(lang, KIND_LABEL_KEY[kind]).toUpperCase()}
+              </Text>
+            </View>
+          )}
+          <TouchableOpacity
+            testID={`card-cat-${event.id}`}
+            style={[styles.catPill, { borderLeftColor: accent }]}
+            onPress={() => router.push({ pathname: "/explore", params: { category: event.category } })}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.catText, { color: accent }]}>
+              {t(lang, event.category as any).toUpperCase()}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            testID={`card-scope-${event.id}`}
+            style={styles.scopePill}
+            onPress={() => router.push({ pathname: "/explore", params: { scope: event.scope } })}
+            activeOpacity={0.7}
+          >
+            {event.scope === "global" ? (
+              <Globe color="#F8F8F6" size={12} strokeWidth={2.5} />
+            ) : (
+              <MapPin color={accent} size={12} strokeWidth={2.5} />
+            )}
+            <Text style={[styles.scopeText, event.scope === "local" && { color: accent }]}>
+              {event.scope === "global"
+                ? t(lang, "global").toUpperCase()
+                : countryLabel(event.origin || (event.countries?.[0] || ""), lang).toUpperCase()}
+            </Text>
+            {event.scope === "local" && (
+              <Text style={styles.flagText}>
+                {countryFlag(event.origin || event.countries?.[0] || "")}
+              </Text>
+            )}
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.yearsBadge}>
           <View style={[styles.redBar, { backgroundColor: accent }]} />
           <View>
@@ -400,15 +400,15 @@ const styles = StyleSheet.create({
   // The photo sits in the upper part of the card: the lower third is where the
   // year, the title and the buttons live, and a face half-covered by text is
   // worse than a slightly smaller picture.
-  photoArea: { position: "absolute", top: 0, left: 0, right: 0, height: "62%" },
-  topRow: {
-    position: "absolute",
-    left: 24,
-    right: 24,
+  // Whole photo (contain), centred in the clear band BETWEEN the floating header
+  // and the text block, so it's never hidden behind the header ("cut off at the
+  // top") and reads centred. `top` is set inline from the safe-area insets.
+  photoArea: { position: "absolute", left: 0, right: 0, bottom: "30%" },
+  metaRow: {
     flexDirection: "row",
     gap: 10,
     flexWrap: "wrap",
-    zIndex: 5,
+    marginBottom: 12,
   },
   catPill: {
     backgroundColor: "rgba(0,0,0,0.55)",

@@ -14,6 +14,7 @@ import { t, T, Lang } from "../../src/i18n/translations";
 import { countryFlag } from "../../src/i18n/countries";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTabBarHeight } from "../../src/hooks/useTabBarHeight";
+import { RotateCw } from "lucide-react-native";
 
 const FEED_CACHE_KEY = "accadde:feedCache";
 
@@ -35,6 +36,7 @@ export default function Feed() {
   const [refreshing, setRefreshing] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
+  const flatListRef = useRef<FlatList>(null);
 
   const lang: Lang = (user?.language as Lang) || "it";
 
@@ -79,6 +81,16 @@ export default function Feed() {
   }, [load, lang]);
 
   const onRefresh = () => { setRefreshing(true); load(); };
+
+  // Explicit refresh button: pull-to-refresh only works from the top of the
+  // feed, which isn't obvious. This scrolls back to the first card and reloads,
+  // so it works from anywhere with one tap.
+  const onRefreshTap = () => {
+    if (refreshing) return;
+    flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+    setRefreshing(true);
+    load();
+  };
 
   const handleInteract = async (id: string, action: "like" | "dislike" | "save" | "unsave") => {
     // Optimistic update
@@ -164,13 +176,31 @@ export default function Feed() {
             </Text>
             <Text style={[styles.counterLabel, { color: colors.textMuted }]}>{t(lang, "events").toUpperCase()}</Text>
           </View>
-          <View style={[styles.countryBadge, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
-            <Text style={styles.countryFlag}>{countryFlag(user?.country || "IT")}</Text>
+          <View style={styles.headerRight}>
+            <TouchableOpacity
+              style={[styles.headerRefreshBtn, { backgroundColor: colors.like }]}
+              onPress={onRefreshTap}
+              disabled={refreshing}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel={t(lang, "refresh")}
+              testID="feed-refresh-btn"
+            >
+              {refreshing ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <RotateCw color="#fff" size={20} strokeWidth={2.5} />
+              )}
+            </TouchableOpacity>
+            <View style={[styles.countryBadge, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
+              <Text style={styles.countryFlag}>{countryFlag(user?.country || "IT")}</Text>
+            </View>
           </View>
         </View>
       </View>
 
       <FlatList
+        ref={flatListRef}
         data={events}
         keyExtractor={(i) => i.id}
         snapToInterval={cardHeight}
@@ -237,4 +267,11 @@ const styles = StyleSheet.create({
     alignItems: "center", justifyContent: "center",
   },
   countryFlag: { fontSize: 20 },
+  headerRight: { flexDirection: "row", alignItems: "center", gap: 10 },
+  headerRefreshBtn: {
+    width: 44, height: 44, borderRadius: 22,
+    alignItems: "center", justifyContent: "center",
+    shadowColor: "#000", shadowOpacity: 0.3, shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 }, elevation: 4,
+  },
 });
