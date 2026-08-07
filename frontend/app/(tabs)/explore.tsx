@@ -15,7 +15,7 @@ import { t, tp } from "../../src/i18n/translations";
 import { countryFlag } from "../../src/i18n/countries";
 import { subcatsFor, subLabel } from "../../src/i18n/interests";
 import { EventData } from "../../src/components/EventCard";
-import { eventImageSource } from "../../src/utils/categoryImages";
+import { eventThumbSource } from "../../src/utils/categoryImages";
 
 const CATS = ["wars", "science", "culture", "sports", "politics"];
 const DECADES = [1900, 1920, 1940, 1950, 1960, 1970, 1980, 1990, 2000, 2010, 2020];
@@ -289,7 +289,7 @@ export default function Explore() {
               return (
                 <View key={ev.id} style={[styles.tile, { width: tileW, backgroundColor: colors.surface }]} testID={`explore-tile-${ev.id}`}>
                   <ImageBackground
-                    source={eventImageSource(ev.image_url, ev.category)}
+                    source={eventThumbSource(ev.image_url, ev.category, Math.round(tileW * 2))}
                     style={styles.tileBg}
                     imageStyle={{ borderRadius: 12 }}
                   >

@@ -12,7 +12,13 @@ import EventCard, { EventData } from "../../src/components/EventCard";
 import { COLORS } from "../../src/theme";
 import { t, T, Lang } from "../../src/i18n/translations";
 import { countryFlag } from "../../src/i18n/countries";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTabBarHeight } from "../../src/hooks/useTabBarHeight";
+
+const FEED_CACHE_KEY = "accadde:feedCache";
+
+/** Cache key by calendar day: yesterday's feed is the wrong feed. */
+const todayKey = () => new Date().toISOString().slice(0, 10);
 
 export default function Feed() {
   const { user } = useAuth();
@@ -36,7 +42,13 @@ export default function Feed() {
     setErr(null);
     try {
       const { data } = await api.get("/events/today", { params: { limit: 120 } });
-      setEvents(data.events || []);
+      const fresh = data.events || [];
+      setEvents(fresh);
+      // Keep today's feed so the next launch has something to show at once.
+      AsyncStorage.setItem(
+        FEED_CACHE_KEY,
+        JSON.stringify({ day: todayKey(), lang, events: fresh })
+      ).catch(() => {});
     } catch (e: any) {
       setErr(t(lang, "errorFeed"));
     } finally {
@@ -45,7 +57,26 @@ export default function Feed() {
     }
   }, [lang]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    // Paint whatever we already had before going to the network. Opening an app
+    // and watching a spinner is the moment it feels slow, even when the server
+    // answers in a third of a second — the wait people notice is the one before
+    // anything appears. The fresh copy replaces this as soon as it lands.
+    let alive = true;
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(FEED_CACHE_KEY);
+        if (!raw || !alive) return;
+        const cached = JSON.parse(raw);
+        if (cached?.day === todayKey() && cached?.lang === lang && cached?.events?.length) {
+          setEvents(cached.events);
+          setLoading(false);
+        }
+      } catch {}
+    })();
+    load();
+    return () => { alive = false; };
+  }, [load, lang]);
 
   const onRefresh = () => { setRefreshing(true); load(); };
 
@@ -99,7 +130,10 @@ export default function Feed() {
     );
   }
 
-  if (err || events.length === 0) {
+  // Only give up when there is genuinely nothing to show. A failed refresh
+  // while yesterday's cards are sitting in memory is not a reason to replace
+  // them with an error — the app works offline, so it should look like it does.
+  if (events.length === 0) {
     return (
       <SafeAreaView style={[styles.center, { backgroundColor: colors.bg }]} testID="feed-error">
         <Text style={[styles.brand, { color: colors.textPrimary }]}>{T[lang].accadde}</Text>

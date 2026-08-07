@@ -62,9 +62,16 @@ api.interceptors.response.use(
         original.headers.Authorization = `Bearer ${data.access_token}`;
         flushQueue(data.access_token);
         return api(original);
-      } catch (e) {
+      } catch (e: any) {
         flushQueue(null);
-        await AsyncStorage.multiRemove([ACCESS_KEY, REFRESH_KEY]);
+        // Only throw the session away when the server actually rejected it.
+        // A refresh that failed because the phone was in a tunnel is not a
+        // reason to sign someone out — they come back above ground to a login
+        // screen and everything looks lost.
+        const refreshStatus = e?.response?.status;
+        if (refreshStatus === 401 || refreshStatus === 403) {
+          await AsyncStorage.multiRemove([ACCESS_KEY, REFRESH_KEY]);
+        }
         return Promise.reject(error);
       } finally {
         isRefreshing = false;

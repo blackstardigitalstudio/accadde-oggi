@@ -4,7 +4,7 @@
  * Bundled => work offline, never break, no external dependency.
  */
 import { ImageSourcePropType } from "react-native";
-import { proxyImage } from "./image";
+import { proxyImage, proxyImageAt } from "./image";
 
 const IMAGES: Record<string, ImageSourcePropType> = {
   wars: require("../../assets/images/categories/wars.png"),
@@ -25,6 +25,16 @@ export function eventImageSource(
   category?: string | null
 ): ImageSourcePropType {
   const proxied = proxyImage(url);
+  return proxied ? { uri: proxied } : categoryImage(category);
+}
+
+/** Same, at a width suited to a small tile — far fewer bytes to wait for. */
+export function eventThumbSource(
+  url?: string | null,
+  category?: string | null,
+  width: number = 320
+): ImageSourcePropType {
+  const proxied = proxyImageAt(url, width);
   return proxied ? { uri: proxied } : categoryImage(category);
 }
 
