@@ -1,0 +1,7 @@
+# Ponte foto di Accadde Oggi (Cloudflare Workers, piano gratuito).
+# Pubblicazione: npx wrangler deploy (da questa cartella). Made in Italy.
+name = "wiki-img"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+account_id = "9e3760c31a0b323e4ce9cd79481e2348"
+workers_dev = true

@@ -17,13 +17,13 @@ import bcrypt
 import jwt
 import httpx
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Query, Header
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import Response, StreamingResponse, RedirectResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, EmailStr
 from bson import ObjectId
-from urllib.parse import unquote
+from urllib.parse import unquote, quote
 
 # ============================================================
 # CONFIG
@@ -525,11 +525,45 @@ def _extract_image(raw: dict) -> Optional[str]:
             break
     if not url:
         return None
-    # Wikipedia thumbnails use /thumb/..../NNNpx-filename. Upgrade to 1080px for HD cards.
-    # Example: /thumb/7/7e/Pope.jpg/330px-Pope.jpg -> /thumb/7/7e/Pope.jpg/1080px-Pope.jpg
-    import re
-    url = re.sub(r"/\d{2,4}px-", "/1080px-", url)
-    return url
+    # Never keep the full-resolution original: it can weigh several MB and every
+    # byte of it used to travel through Render's metered bandwidth. A 960px
+    # thumbnail (a Wikimedia standard size) is plenty for a full-screen card.
+    thumb, original = _wm_sized(url, 960)
+    return thumb or original
+
+
+# Wikimedia serves pre-rendered thumbnails only at these widths; other widths
+# get rate-limited, so every request is snapped to one of them.
+_WM_STD_WIDTHS = (120, 250, 330, 500, 960)
+_WM_RE = re.compile(
+    r"^https://upload\.wikimedia\.org/wikipedia/([^/]+)/(?:thumb/)?([0-9a-f])/([0-9a-f]{2})/([^/?#]+)"
+)
+
+
+def _wm_sized(url: str, default_width: int = 960) -> tuple:
+    """Return (thumbnail_url_or_None, original_url) for a Wikimedia image URL.
+
+    Works for both originals and existing /thumb/.../NNNpx- URLs; the width
+    already in the URL is kept (snapped to a standard size, max 960px).
+    If the URL is not a recognisable upload.wikimedia.org file, returns (None, url).
+    """
+    m = _WM_RE.match(url or "")
+    if not m:
+        return None, url
+    proj, a, ab, fname = m.groups()
+    original = f"https://upload.wikimedia.org/wikipedia/{proj}/{a}/{ab}/{fname}"
+    wm = re.search(r"/(\d{2,4})px-", url)
+    want = min(int(wm.group(1)) if wm else default_width, 960)
+    width = next((w for w in _WM_STD_WIDTHS if w >= want), 960)
+    ext = fname.lower().rsplit(".", 1)[-1]
+    if ext in ("jpg", "jpeg", "png", "gif", "webp"):
+        suffix = ""
+    elif ext == "svg":
+        suffix = ".png"
+    else:
+        return None, original
+    thumb = f"https://upload.wikimedia.org/wikipedia/{proj}/thumb/{a}/{ab}/{fname}/{width}px-{fname}{suffix}"
+    return thumb, original
 
 
 async def _fetch_pageimage(lang: str, title: str) -> Optional[str]:
@@ -1790,10 +1824,29 @@ _EMPTY_PNG = bytes.fromhex(
     "89504E470D0A1A0A0000000D49484452000000010000000108060000001F15C4890000000D49444154789C6300010000000500010D0A2DB40000000049454E44AE426082"
 )
 
+# The images themselves are relayed by a free Cloudflare Worker (img-worker/):
+# Render's free plan meters outbound bandwidth (5 GB/month) and relaying
+# pictures here used it all up. This endpoint now only answers with a tiny
+# redirect. Set IMG_CDN_URL to "" to fall back to relaying through Render.
+IMG_CDN_URL = os.environ.get(
+    "IMG_CDN_URL", "https://wiki-img.blackstardigitalstudio.workers.dev"
+).rstrip("/")
+
+
 @api.get("/img")
 async def image_proxy(url: str = Query(..., min_length=8)):
     if not url.startswith("https://upload.wikimedia.org/") and not url.startswith("https://commons.wikimedia.org/"):
         raise HTTPException(status_code=400, detail="Only Wikimedia images are allowed")
+
+    thumb, original = _wm_sized(url, 960)
+    if IMG_CDN_URL and original.startswith("https://upload.wikimedia.org/"):
+        target = f"{IMG_CDN_URL}/?o={quote(original, safe='')}"
+        if thumb:
+            target += f"&u={quote(thumb, safe='')}"
+        return RedirectResponse(
+            target, status_code=302, headers={"Cache-Control": "public, max-age=86400"}
+        )
+    url = thumb or original
 
     cached = _image_cache.get(url)
     if cached:
