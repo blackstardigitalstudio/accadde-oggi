@@ -21,7 +21,7 @@ manda a Google. Il segreto del client web non serve e non è stato salvato da
 nessuna parte: l'app usa il flusso con `id_token`, che non lo richiede.
 
 Dettagli di come sono stati creati:
-- Client **Web**: origini e redirect `https://accadde-oggi-web.onrender.com` e
+- Client **Web**: origini e redirect `https://accadde-oggi.pages.dev` (prima `https://accadde-oggi-web.onrender.com`) e
   `http://localhost:8081`
 - Client **Android**: pacchetto `app.accaddeoggi.mobile`, impronta SHA-1
   `D4:8A:52:19:0A:ED:4E:4C:85:D7:FB:80:DC:18:E3:8D:72:A5:27:79` — è la **chiave di
@@ -83,10 +83,10 @@ Ripeti tre volte:
 - Tipo: **Applicazione web**
 - Nome: `Accadde Oggi Web`
 - **Origini JavaScript autorizzate**:
-  - `https://accadde-oggi-web.onrender.com`
+  - `https://accadde-oggi.pages.dev` (prima `https://accadde-oggi-web.onrender.com`)
   - `http://localhost:8081` (per le prove in locale)
 - **URI di reindirizzamento autorizzati**:
-  - `https://accadde-oggi-web.onrender.com`
+  - `https://accadde-oggi.pages.dev` (prima `https://accadde-oggi-web.onrender.com`)
   - `http://localhost:8081`
 
 ### B) Android

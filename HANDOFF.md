@@ -31,7 +31,7 @@ L'estensione Chrome NON può screenshot/click su `play.google.com`, **ma `mcp__C
 ## Prossimi passi (dopo upload AAB)
 1. Note di versione (opzionali) → Avanti/Salva
 2. Dichiarazioni (risposte pronte):
-   - Privacy URL: `https://accadde-oggi-web.onrender.com/privacy`
+   - Privacy URL: `https://accadde-oggi.pages.dev/privacy`
    - Accesso app: login richiesto → demo `demo@accaddeoggi.app` / `Demo1234`
    - Annunci: nessuno · Sicurezza dati: Email+Nome (account), cifrati in transito, non condivisi, cancellabili
    - Classificazione: Notizie/Istruzione → Tutti · Pubblico: 13+
