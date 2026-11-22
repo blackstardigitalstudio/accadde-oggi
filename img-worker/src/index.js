@@ -26,7 +26,7 @@ export default {
     }
     const params = new URL(request.url).searchParams;
     const candidates = [params.get("u"), params.get("o")].filter(
-      (c) => c && ALLOWED.test(c)
+      (c) => c && ALLOWED.test(c) && !/\.\.|%2e/i.test(c)
     );
     if (candidates.length === 0) {
       return new Response("Only upload.wikimedia.org images", { status: 400 });

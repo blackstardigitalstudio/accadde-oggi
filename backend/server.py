@@ -529,7 +529,10 @@ def _extract_image(raw: dict) -> Optional[str]:
     # byte of it used to travel through Render's metered bandwidth. A 960px
     # thumbnail (a Wikimedia standard size) is plenty for a full-screen card.
     thumb, original = _wm_sized(url, 960)
-    return thumb or original
+    if thumb:
+        return thumb
+    # tif/pdf/djvu originals can weigh tens of MB: show the category picture instead.
+    return None if original.startswith("https://upload.wikimedia.org/") else original
 
 
 # Wikimedia serves pre-rendered thumbnails only at these widths; other widths
@@ -1846,7 +1849,12 @@ async def image_proxy(url: str = Query(..., min_length=8)):
         return RedirectResponse(
             target, status_code=302, headers={"Cache-Control": "public, max-age=86400"}
         )
-    url = thumb or original
+    if IMG_CDN_URL or not thumb:
+        # Never relay a full-size original through Render's metered bandwidth.
+        return Response(
+            content=_EMPTY_PNG, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"}
+        )
+    url = thumb
 
     cached = _image_cache.get(url)
     if cached:
