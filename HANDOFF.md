@@ -12,7 +12,7 @@ Migrata da Emergent, deployata gratis, in pubblicazione su Google Play (test int
 - `D:\accadde oggi\accadde-oggi-main\accadde-oggi-main\frontend` = ha `node_modules` (per build EAS)
 
 ## Già fatto e ONLINE
-- Web: https://accadde-oggi-web.onrender.com · API: https://accadde-oggi-api.onrender.com (Render, auto-deploy su push)
+- Web: https://accadde-oggi.pages.dev (Cloudflare Pages, si pubblica con pubblica-web.bat; il vecchio accadde-oggi-web.onrender.com rimanda qui) · API: https://accadde-oggi-api.onrender.com (Render, auto-deploy su push)
 - DB: MongoDB Atlas free. Login demo: `demo@accaddeoggi.app` / `Demo1234`
 - Emergent rimosso; approfondimento = estratto reale Wikipedia; immagini evento migliorate; icona **AO** dorata; "Made in Italy"; privacy su `/privacy`
 - Marketing: `marketing/PLAY_STORE_LISTING.md` + `marketing/assets/` (feature_graphic.png, store_icon.png)
@@ -31,7 +31,7 @@ L'estensione Chrome NON può screenshot/click su `play.google.com`, **ma `mcp__C
 ## Prossimi passi (dopo upload AAB)
 1. Note di versione (opzionali) → Avanti/Salva
 2. Dichiarazioni (risposte pronte):
-   - Privacy URL: `https://accadde-oggi-web.onrender.com/privacy`
+   - Privacy URL: `https://accadde-oggi.pages.dev/privacy`
    - Accesso app: login richiesto → demo `demo@accaddeoggi.app` / `Demo1234`
    - Annunci: nessuno · Sicurezza dati: Email+Nome (account), cifrati in transito, non condivisi, cancellabili
    - Classificazione: Notizie/Istruzione → Tutti · Pubblico: 13+

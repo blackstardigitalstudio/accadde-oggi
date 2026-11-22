@@ -116,7 +116,7 @@ Made in Italy 🇮🇹
 ## ✅ Checklist Play Console (per il rilascio interno)
 1. Crea/seleziona l'app → **package**: `app.accaddeoggi.mobile`.
 2. Carica l'**AAB** prodotto da EAS nella traccia **Test interno**.
-3. **Privacy Policy URL**: `https://accadde-oggi-web.onrender.com/privacy`.
+3. **Privacy Policy URL**: `https://accadde-oggi.pages.dev/privacy`.
 4. Compila **Data safety** (raccolti: email, nome — per account; non condivisi/venduti; in transito cifrato), **content rating** (questionario), **target audience**.
 5. Incolla titolo/descrizioni qui sopra; carica icona + screenshot.
 6. Aggiungi/seleziona la **lista tester salvata** e pubblica la release interna.
