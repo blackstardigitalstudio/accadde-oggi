@@ -53,23 +53,18 @@ services:
       - key: FAME_MIN          # min. Wikipedia editions for a person to earn a card
         value: "30"
 
-  # ---------------- Web app (Expo static export) ----------------
+  # ---------------- Web app: moved to Cloudflare Pages ----------------
+  # The web app now lives on Cloudflare Pages (free, unmetered bandwidth):
+  # https://accadde-oggi.pages.dev — publish it with pubblica-web.bat.
+  # This Render service only redirects old links there, so it no longer
+  # spends the free 5 GB/month of Render bandwidth on the web bundle.
   - type: web
     name: accadde-oggi-web
     runtime: static
     rootDir: frontend
-    buildCommand: yarn install --frozen-lockfile && npx expo export -p web
-    staticPublishPath: dist
-    envVars:
-      # Matches the API service public URL (Render derives it from the service name).
-      # If you rename the API service, update this value to match.
-      - key: EXPO_PUBLIC_BACKEND_URL
-        value: https://accadde-oggi-api.onrender.com
-      # Fallback for the web build if the API is ever unreachable at load time.
-      # The app normally asks the API for this at runtime.
-      - key: EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
-        value: 727081593792-pbs5ve4p4l7cr4ck60f3dsd8263afs16.apps.googleusercontent.com
+    buildCommand: mkdir -p redirect-only && echo ok > redirect-only/ok.txt
+    staticPublishPath: redirect-only
     routes:
-      - type: rewrite
+      - type: redirect
         source: /*
-        destination: /index.html
+        destination: https://accadde-oggi.pages.dev/*
